@@ -1,0 +1,202 @@
+library(pheatmap)
+library(ggplot2)
+
+CMS = read.csv('/github/model_data/TCGA/CMS/coad_cms.csv', header = T, row.names = 1)
+arc = read.csv('/github/model_data/Archetype/arc_data.csv', header = T, row.names = 1)
+tpm = read.csv('/github/model_data/TCGA/COAD_tpm.csv', header = T, row.names = 1)
+xcell_score = read.csv('/github/model_data/TCGA/xcell/xcell.csv', header = T, row.names = 1)
+arcpos = read.csv('/github/model_data/Archetype/arc_position.csv', header = T, row.names = 1)
+
+MOFAobject.trained = readRDS('/github/model_data/MOFA/MOFA_model.rds')
+factor_score = MOFAobject.trained@expectations$Z$group1
+factor_score = data.frame(factor_score)
+factor_score = factor_score[,c(1:4)]
+factor_score[,'CMS'] = CMS[rownames(factor_score),'prediction']
+factor_score[is.na(factor_score[,'CMS']),'CMS'] = 'NA'
+
+######## Main figure 1e left
+pdf("/github/Figure/Main/Fig1/d_Factor_CMS_mapping.pdf", width = 24, height = 6)
+ggplot(factor_score,aes(x=Factor1,y=Factor4,color = CMS)) + geom_point(cex=7) + 
+  geom_segment(data= data.frame(t(arcpos)), aes(x=unlist(arcpos[1,]), xend=unlist(arcpos[1,c(2,3,1)]) , 
+                                                y=unlist(arcpos[2,]),yend=unlist(arcpos[2,c(2,3,1)])),col="lightblue",cex=2 ) + 
+  geom_point(data=data.frame(t(arcpos)),col=alpha(c("#B81330","#58839D", "#79A960"),1),cex=8) + 
+  geom_text(data=data.frame(t(arcpos)),label=1:3,col="black",cex=8) + theme_classic() +
+  scale_color_manual(values = c("CMS1" = "grey90","CMS2" = "red2","CMS3" = "grey90","CMS4" = "grey90",'NA' = 'grey90')) +
+  ggplot(factor_score,aes(x=Factor1,y=Factor4,color = CMS)) + geom_point(cex=7) + 
+  geom_segment(data= data.frame(t(arcpos)), aes(x=unlist(arcpos[1,]), xend=unlist(arcpos[1,c(2,3,1)]) , 
+                                                y=unlist(arcpos[2,]),yend=unlist(arcpos[2,c(2,3,1)])),col="lightblue",cex=2 ) + 
+  geom_point(data=data.frame(t(arcpos)),col=alpha(c("#B81330","#58839D", "#79A960"),1),cex=8) + 
+  geom_text(data=data.frame(t(arcpos)),label=1:3,col="black",cex=8) + theme_classic() +
+  scale_color_manual(values = c("CMS1" = "grey90","CMS2" = "grey90","CMS3" = "grey90","CMS4" = "dodger blue",'NA' = 'grey90')) +
+  ggplot(factor_score,aes(x=Factor1,y=Factor4,color = CMS)) + geom_point(cex=7) + 
+  geom_segment(data= data.frame(t(arcpos)), aes(x=unlist(arcpos[1,]), xend=unlist(arcpos[1,c(2,3,1)]) , 
+                                                y=unlist(arcpos[2,]),yend=unlist(arcpos[2,c(2,3,1)])),col="lightblue",cex=2 ) + 
+  geom_point(data=data.frame(t(arcpos)),col=alpha(c("#B81330","#58839D", "#79A960"),1),cex=8) + 
+  geom_text(data=data.frame(t(arcpos)),label=1:3,col="black",cex=8) + theme_classic() +
+  scale_color_manual(values = c("CMS1" = "Forestgreen","CMS2" = "grey90","CMS3" = "grey90","CMS4" = "grey90",'NA' = 'grey90'))
+dev.off()
+
+
+######## Main figure 1e middle
+data(sig.ggi)
+GGI_geneset = as.vector(unique(sig.ggi$HUGO.gene.symbol))
+GGI_geneset = GGI_geneset[-which(is.na(GGI_geneset))]
+ICR_geneset = c('IFNG','TBX21','CD8B','CD8A','IL12B','STAT1','IRF1','CXCL9','CXCL10','CCL5','GNLY','PRF1','GZMA','GZMB', 'GZMH','CD274','PDCD1','CTLA4','FOXP3','IDO1') # Immunologic Constant of Rejection (ICR)
+hallmark_genesets = msigdbr(species = "human", category = "H")
+
+total_geneset = list()
+for(i in 1:length(unique(hallmark_genesets$gs_name))){
+  total_geneset[[i]] = unique(hallmark_genesets$gene_symbol[which(hallmark_genesets$gs_name == unique(hallmark_genesets$gs_name)[i])])
+  names(total_geneset)[i] = unique(hallmark_genesets$gs_name)[i]
+}
+total_geneset[[51]] = GGI_geneset
+total_geneset[[52]] = ICR_geneset
+total_geneset[[53]] = as.vector(mapIds(org.Hs.eg.db, keys = geneSets.CMS[['MSI']], keytype = "ENTREZID", column="SYMBOL"))
+total_geneset[[54]] = as.vector(mapIds(org.Hs.eg.db, keys = geneSets.CMS[['MSS']], keytype = "ENTREZID", column="SYMBOL"))
+names(total_geneset)[51:54] = c('GGI_score','ICR_score', 'MSI', 'MSS')
+
+phenotype = gsvaParam(exprData = data.matrix(tpm),geneSets = total_geneset)
+phenotype = gsva(phenotype)
+phenotype = data.frame(t(phenotype))
+
+CYT_geneset = c('GZMA','PRF1') #Cytolytic Activity Metrix (CYT)
+CYT_score = t((tpm['GZMA',] + tpm['PRF1',])/2)
+colnames(CYT_score) = 'CYT_score'
+phenotype = cbind(phenotype,xcell_score[,65:67],CYT_score)
+
+GOBP_gs = read.csv('/github/model_data/Pathway/Geneset/GOBP_gsva.csv', header = T, row.names = 1)
+GOMF_gs = read.csv('/github/model_data/Pathway/Geneset/GOMF_gsva.csv', header = T, row.names = 1)
+GOCC_gs = read.csv('/github/model_data/Pathway/Geneset/GOCC_gsva.csv', header = T, row.names = 1)
+GO_gs = cbind(GOBP_gs,GOMF_gs,GOCC_gs)
+KEGG_gs = read.csv('/github/model_data/Pathway/Geneset/KEGG_gsva.csv', header = T, row.names = 1)
+WIKI_gs = read.csv('/github/model_data/Pathway/Geneset/WIKI_gsva.csv', header = T, row.names = 1)
+Reactome_gs = read.csv('/github/model_data/Pathway/Geneset/Reactome_gsva.csv', header = T, row.names = 1)
+
+phenotype = cbind(phenotype,GO_gs,KEGG_gs,WIKI_gs,Reactome_gs)
+nor_sd = function(x){
+  result = (x - mean(x)) / sd(x) 
+  return(result)
+}
+
+res_df = c()
+for(i in 1:ncol(phenotype)){
+  res = nor_sd(phenotype[,i])
+  res_df = rbind(res_df,res)
+}
+rownames(res_df) = colnames(phenotype)
+colnames(res_df) = rownames(phenotype)
+
+phenotype = data.frame(t(res_df[,rownames(arc)]))
+phenotype = cbind(arc[,1:3],phenotype)
+
+res_list = list()
+for (i in 1:3){
+  coeff_df = c()
+  fdr_df = c()
+  pval_df = c()
+  coeffs = c()
+  pvals = c()
+  for (j in 4:ncol(phenotype)){
+    res = cor.test(phenotype[,i], phenotype[,j], method = "pearson")
+    pvals = c(pvals, res$p.value)
+    coeffs = c(coeffs, res$estimate[[1]])
+  }
+  coeff_df = cbind(coeff_df, coeffs)
+  coeff_df = data.frame(coeff_df)
+  pval_df = cbind(pval_df, pvals)
+  pval_df = data.frame(pval_df)
+  fdrs = p.adjust(pvals, "fdr")
+  fdr_df = cbind(fdr_df, fdrs)
+  fdr_df = data.frame(fdr_df)
+  total_df = cbind(coeff_df,pval_df,fdr_df)
+  rownames(total_df) = features
+  res_list[[i]] = total_df
+}
+
+A1_df = res_list[[1]]
+A2_df = res_list[[2]]
+A3_df = res_list[[3]]
+
+A1_feature_list = features[which(abs(A1_df$coeffs) >= 0.3)] 
+A2_feature_list = features[which(abs(A2_df$coeffs) >= 0.3)] 
+A3_feature_list = features[which(abs(A3_df$coeffs) >= 0.3)] 
+
+
+A1_arc_data = arc[order(arc$X1,decreasing = T),]
+A1_res_df = data.frame(res_df)
+A1_res_df = A1_res_df[A1_feature_list,rownames(A1_arc_data)]
+A2_arc_data = arc[order(arc$X2,decreasing = T),]
+A2_res_df = data.frame(res_df)
+A2_res_df = A2_res_df[A2_feature_list,rownames(A2_arc_data)]
+A3_arc_data = arc[order(arc$X3,decreasing = T),]
+A3_res_df = data.frame(res_df)
+A3_res_df = A3_res_df[A3_feature_list,rownames(A3_arc_data)]
+
+
+plaetteLength = 70 
+myColor = colorRampPalette(c("blue2", "white", "red2"))(plaetteLength)
+myBreaks = c(seq(min(A1_res_df), 0, length.out=ceiling(plaetteLength/2)+1), seq(max(A1_res_df)/plaetteLength, 3, length.out=floor(plaetteLength/2)))
+png('/github/Figure/Main/Fig1/d_A1_pathway.png', width = 1600, height = 800)
+pheatmap(A1_res_df,cluster_rows = T, cluster_cols = F,show_rownames=F,show_colnames=F,
+         color = myColor, breaks = myBreaks)
+dev.off()
+
+myBreaks = c(seq(min(A2_res_df), 0, length.out=ceiling(plaetteLength/2)+1), seq(max(A2_res_df)/plaetteLength, 3, length.out=floor(plaetteLength/2)))
+png('/github/Figure/Main/Fig1/d_A2_pathway.png', width = 1600, height = 800)
+pheatmap(A2_res_df,cluster_rows = T, cluster_cols = F,show_rownames=F,show_colnames=F,
+         color = myColor, breaks = myBreaks)
+dev.off()
+
+myBreaks = c(seq(min(A3_res_df), 0, length.out=ceiling(plaetteLength/2)+1), seq(max(A3_res_df)/plaetteLength, 3, length.out=floor(plaetteLength/2)))
+png('/github/Figure/Main/Fig1/d_A3_pathway.png', width = 1600, height = 800)
+pheatmap(A3_res_df,cluster_rows = T, cluster_cols = F,show_rownames=F,show_colnames=F,
+         color = myColor, breaks = myBreaks)
+dev.off()
+
+
+######## Main figure 1e middle
+xcell_score = xcell_score[rownames(arc),]
+total_data = cbind(arc,xcell_score)
+
+coef = c()
+for(i in 5:68){coef = c(coef,cor.test(total_data[,1],total_data[,i])[[4]])}
+A1_coef = coef
+coef = c()
+for(i in 5:68){coef = c(coef,cor.test(total_data[,2],total_data[,i])[[4]])}
+A2_coef = coef
+coef = c()
+for(i in 5:68){coef = c(coef,cor.test(total_data[,3],total_data[,i])[[4]])}
+A3_coef = coef
+
+df = data.frame('A1' = A1_coef, 'A2' = A2_coef, 'A3' = A3_coef, 'celltype' = colnames(total_data)[5:68])
+df$celltype
+df = df[c(4,8,12,20,32,35,41,48,49,54,62:64),]
+rownames(df) = NULL
+
+df$celltype = c('Bcells','CD4 Tcells','CD8 Tcells','Dendritic cells', 'Macrophages','Mast cells','Monocytes', 'Neutrophils', 'NK cells', 'Plasma cells', 'Th1 cells', 'Th2 cells', 'Tregs')
+df$celltype = factor(df$celltype, levels = c('Dendritic cells', 'Mast cells', 'Macrophages', 'Monocytes', 'Bcells', 'Plasma cells', 'Neutrophils', 'NK cells', 'Th1 cells', 'Th2 cells', 'CD8 Tcells', 'CD4 Tcells', 'Tregs'))
+
+pdf("/github/Figure/Main/Fig1/d_TME.pdf", width = 32, height = 8)
+ggplot(df, aes(x = celltype, y = A1)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = A1), colour = "black",lwd =0.5) +
+  geom_point(size = 10, aes(colour = celltype)) + 
+  coord_cartesian(ylim =c(-0.4,0.6))  +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90,vjust = 0.5, hjust = 1,size=15),
+        axis.text.y = element_text(size=15)) +  ylab("Coefficient") +
+  ggplot(df, aes(x = celltype, y = A2)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = A2), colour = "black",lwd =0.5) +
+  geom_point(size = 10, aes(colour = celltype)) + 
+  coord_cartesian(ylim =c(-0.4,0.6))  +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90,vjust = 0.5, hjust = 1,size=15),
+        axis.text.y = element_text(size=15)) +  ylab("Coefficient") +
+  ggplot(df, aes(x = celltype, y = A3)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = A3), colour = "black",lwd =0.5) +
+  geom_point(size = 10, aes(colour = celltype)) + 
+  coord_cartesian(ylim =c(-0.4,0.6))  +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90,vjust = 0.5, hjust = 1,size=15),
+        axis.text.y = element_text(size=15)) +  ylab("Coefficient") 
+dev.off()
+

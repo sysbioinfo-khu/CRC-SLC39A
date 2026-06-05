@@ -1,0 +1,115 @@
+TCGA_T = read.csv('/github/model_data/TCGA/COAD_tpm.csv', header = T, row.names = 1)
+TCGA_T = data.frame(t(TCGA_T))
+TCGA_C = read.csv('/github/model_data/TCGA/CDA_TCGA_COAD_cnv_gistic2.csv', header = T, row.names = 1)
+TCGA_C = data.frame(t(TCGA_C))
+
+sample = intersect(rownames(TCGA_T),rownames(TCGA_C))
+colnames(TCGA_C) = paste0('CNV_',colnames(TCGA_C))
+colnames(TCGA_T) = paste0('TPM_',colnames(TCGA_T))
+data = data.frame(TCGA_C[sample,grep('SLC39A',colnames(TCGA_C))],TCGA_T[sample,grep('SLC39A',colnames(TCGA_T))])
+data$type = as.factor(data$CNV_SLC39A5)
+SLC39A1 = cor.test(data$CNV_SLC39A1,data$TPM_SLC39A1,method = 'spearman')
+SLC39A2 = cor.test(data$CNV_SLC39A2,data$TPM_SLC39A2,method = 'spearman')
+SLC39A3 = cor.test(data$CNV_SLC39A3,data$TPM_SLC39A3,method = 'spearman')
+SLC39A4 = cor.test(data$CNV_SLC39A4,data$TPM_SLC39A4,method = 'spearman')
+SLC39A5 = cor.test(data$CNV_SLC39A5,data$TPM_SLC39A5,method = 'spearman')
+SLC39A6 = cor.test(data$CNV_SLC39A6,data$TPM_SLC39A6,method = 'spearman')
+SLC39A7 = cor.test(data$CNV_SLC39A7,data$TPM_SLC39A7,method = 'spearman')
+SLC39A8 = cor.test(data$CNV_SLC39A8,data$TPM_SLC39A8,method = 'spearman')
+SLC39A9 = cor.test(data$CNV_SLC39A9,data$TPM_SLC39A9,method = 'spearman')
+SLC39A10 = cor.test(data$CNV_SLC39A10,data$TPM_SLC39A10,method = 'spearman')
+SLC39A11 = cor.test(data$CNV_SLC39A11,data$TPM_SLC39A11,method = 'spearman')
+SLC39A12 = cor.test(data$CNV_SLC39A12,data$TPM_SLC39A12,method = 'spearman')
+SLC39A13 = cor.test(data$CNV_SLC39A13,data$TPM_SLC39A13,method = 'spearman')
+SLC39A14 = cor.test(data$CNV_SLC39A14,data$TPM_SLC39A14,method = 'spearman')
+TCGA_cor_df = data.frame('coeff' = c(SLC39A1[[4]],SLC39A2[[4]],SLC39A3[[4]],SLC39A4[[4]],SLC39A5[[4]],
+                                     SLC39A6[[4]],SLC39A7[[4]],SLC39A8[[4]],SLC39A9[[4]],SLC39A10[[4]],
+                                     SLC39A11[[4]],SLC39A12[[4]],SLC39A13[[4]],SLC39A14[[4]]),
+                         'pval' = c(SLC39A1[[3]],SLC39A2[[3]],SLC39A3[[3]],SLC39A4[[3]],SLC39A5[[3]],
+                                    SLC39A6[[3]],SLC39A7[[3]],SLC39A8[[3]],SLC39A9[[3]],SLC39A10[[3]],
+                                    SLC39A11[[3]],SLC39A12[[3]],SLC39A13[[3]],SLC39A14[[3]]),
+                         'Gene' = paste0('SLC39A',1:14),
+                         'type' = 'TCGA (bulk)')
+
+
+CPTAC_T = read.table('/github/model_data/CPTAC/rsem.txt' ,header = T, sep = '\t', row.names = 1)
+CPTAC_T = data.frame(t(CPTAC_T))
+CPTAC_C = read.table('/github/model_data/CPTAC/CNV.tsv' ,header = T, sep = '\t', row.names = 1)
+CPTAC_C = data.frame(t(CPTAC_C))
+sample = intersect(rownames(CPTAC_C),rownames(CPTAC_T))
+colnames(CPTAC_T) = paste0('TPM_',colnames(CPTAC_T))
+colnames(CPTAC_C) = paste0('CNV_',colnames(CPTAC_C))
+CPTAC_data = data.frame(CPTAC_C[sample,grep('SLC39A',colnames(CPTAC_C))],CPTAC_T[sample,grep('SLC39A',colnames(CPTAC_T))])
+SLC39A1 = cor.test(CPTAC_data$CNV_SLC39A1,CPTAC_data$TPM_SLC39A1,method = 'spearman')
+SLC39A3 = cor.test(CPTAC_data$CNV_SLC39A3,CPTAC_data$TPM_SLC39A3,method = 'spearman')
+SLC39A4 = cor.test(CPTAC_data$CNV_SLC39A4,CPTAC_data$TPM_SLC39A4,method = 'spearman')
+SLC39A5 = cor.test(CPTAC_data$CNV_SLC39A5,CPTAC_data$TPM_SLC39A5,method = 'spearman')
+SLC39A6 = cor.test(CPTAC_data$CNV_SLC39A6,CPTAC_data$TPM_SLC39A6,method = 'spearman')
+SLC39A7 = cor.test(CPTAC_data$CNV_SLC39A7,CPTAC_data$TPM_SLC39A7,method = 'spearman')
+SLC39A8 = cor.test(CPTAC_data$CNV_SLC39A8,CPTAC_data$TPM_SLC39A8,method = 'spearman')
+SLC39A9 = cor.test(CPTAC_data$CNV_SLC39A9,CPTAC_data$TPM_SLC39A9,method = 'spearman')
+SLC39A10 = cor.test(CPTAC_data$CNV_SLC39A10,CPTAC_data$TPM_SLC39A10,method = 'spearman')
+SLC39A11 = cor.test(CPTAC_data$CNV_SLC39A11,CPTAC_data$TPM_SLC39A11,method = 'spearman')
+SLC39A13 = cor.test(CPTAC_data$CNV_SLC39A13,CPTAC_data$TPM_SLC39A13,method = 'spearman')
+SLC39A14 = cor.test(CPTAC_data$CNV_SLC39A14,CPTAC_data$TPM_SLC39A14,method = 'spearman')
+CPTAC_cor_df = data.frame('coeff' = c(SLC39A1[[4]],NA,SLC39A3[[4]],SLC39A4[[4]],SLC39A5[[4]],
+                                      SLC39A6[[4]],SLC39A7[[4]],SLC39A8[[4]],SLC39A9[[4]],SLC39A10[[4]],
+                                      SLC39A11[[4]],NA,SLC39A13[[4]],SLC39A14[[4]]),
+                          'pval' = c(SLC39A1[[3]],NA,SLC39A3[[3]],SLC39A4[[3]],SLC39A5[[3]],
+                                     SLC39A6[[3]],SLC39A7[[3]],SLC39A8[[3]],SLC39A9[[3]],SLC39A10[[3]],
+                                     SLC39A11[[3]],NA,SLC39A13[[3]],SLC39A14[[3]]),
+                          'Gene' = paste0('SLC39A',1:14),
+                          'type' = 'CPTAC (bulk)')
+
+
+SG_T = qread('/github/singlecell_data/SG/data/SG_processed_data.qs')
+SG_T = data.frame(SG_T@assays$RNA$scale.data)
+colnames(SG_T) = gsub("\\.", "-", colnames(SG_T))
+SG_T = data.frame(t(SG_T))
+colnames(SG_T) = paste0('TPM_',colnames(SG_T))
+SG_C = readRDS('/github/singlecell_data/SG/infercnv/res_infercnv.rds')
+SG_C = SG_C@expr.data
+SG_C = data.frame(t(SG_C))
+colnames(SG_C) = paste0('CNV_',colnames(SG_C))
+sample = intersect(rownames(SG_C),rownames(SG_T))
+SG_data = data.frame(SG_C[sample,grep('SLC39A',colnames(SG_C))],SG_T[sample,grep('SLC39A',colnames(SG_T))])
+SLC39A1 = cor.test(SG_data$CNV_SLC39A1,SG_data$TPM_SLC39A1,method = 'pearson')
+SLC39A3 = cor.test(SG_data$CNV_SLC39A3,SG_data$TPM_SLC39A3,method = 'pearson')
+SLC39A4 = cor.test(SG_data$CNV_SLC39A4,SG_data$TPM_SLC39A4,method = 'pearson')
+SLC39A5 = cor.test(SG_data$CNV_SLC39A5,SG_data$TPM_SLC39A5,method = 'pearson')
+SLC39A6 = cor.test(SG_data$CNV_SLC39A6,SG_data$TPM_SLC39A6,method = 'pearson')
+SLC39A7 = cor.test(SG_data$CNV_SLC39A7,SG_data$TPM_SLC39A7,method = 'pearson')
+SLC39A8 = cor.test(SG_data$CNV_SLC39A8,SG_data$TPM_SLC39A8,method = 'pearson')
+SLC39A9 = cor.test(SG_data$CNV_SLC39A9,SG_data$TPM_SLC39A9,method = 'pearson')
+SLC39A10 = cor.test(SG_data$CNV_SLC39A10,SG_data$TPM_SLC39A10,method = 'pearson')
+SLC39A11 = cor.test(SG_data$CNV_SLC39A11,SG_data$TPM_SLC39A11,method = 'pearson')
+SLC39A13 = cor.test(SG_data$CNV_SLC39A13,SG_data$TPM_SLC39A13,method = 'pearson')
+SLC39A14 = cor.test(SG_data$CNV_SLC39A14,SG_data$TPM_SLC39A14,method = 'pearson')
+SG_cor_df = data.frame('coeff' = c(SLC39A1[[4]],NA,SLC39A3[[4]],SLC39A4[[4]],SLC39A5[[4]],
+                                   SLC39A6[[4]],SLC39A7[[4]],SLC39A8[[4]],SLC39A9[[4]],SLC39A10[[4]],
+                                   SLC39A11[[4]],NA,SLC39A13[[4]],SLC39A14[[4]]),
+                       'pval' = c(SLC39A1[[3]],NA,SLC39A3[[3]],SLC39A4[[3]],SLC39A5[[3]],
+                                  SLC39A6[[3]],SLC39A7[[3]],SLC39A8[[3]],SLC39A9[[3]],SLC39A10[[3]],
+                                  SLC39A11[[3]],NA,SLC39A13[[3]],SLC39A14[[3]]),
+                       'Gene' = paste0('SLC39A',1:14),
+                       'type' = 'SG (single cell)')
+
+
+total_df = rbind(TCGA_cor_df,CPTAC_cor_df,SG_cor_df)
+x_level_order = paste0('SLC39A',1:14)
+y_level_order = c('SG (single cell)','CPTAC (bulk)','TCGA (bulk)')
+total_df$grid = ''
+total_df$Gene = factor(total_df$Gene, levels=c('SLC39A1','SLC39A2','SLC39A3','SLC39A4','SLC39A5','SLC39A6','SLC39A7',
+                                               'SLC39A8','SLC39A9','SLC39A10','SLC39A11','SLC39A12','SLC39A13','SLC39A14'))
+total_df$pval = total_df$pval + 0.00000000000000000000000001
+
+######## Main figure 2b
+pdf("/github/Figure/Main/Fig2/b_CNV.pdf", width = 16, height = 8)
+ggplot(total_df, aes(x = grid,y = factor(type, level = y_level_order))) + facet_grid(. ~ Gene)  + theme_bw() +
+  geom_point(aes(size = -log10(pval), fill = coeff), shape = 21,
+             colour = ifelse(total_df$pval < 0.05, 'black', 'white')) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, na.value = 'grey') +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_blank(),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()

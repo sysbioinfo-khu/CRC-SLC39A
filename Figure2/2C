@@ -1,0 +1,75 @@
+TCGA_T = read.csv('/github/model_data/TCGA/COAD_tpm.csv', header = T,row.names = 1)
+TCGA_T = data.frame(t(TCGA_T))
+COAD_P = read.csv('/github/model_data/Viper/coad_protein_activity.csv', header = T,row.names = 1)
+COAD_P = data.frame(t(COAD_P))
+
+geneset = list()
+geneset[[1]] =c('SLC39A1', 'SLC39A2', 'SLC39A3', 'SLC39A4', 'SLC39A5','SLC39A6', 'SLC39A8','SLC39A10','SLC39A14')
+names(geneset) = 'Zinc'
+pathway = gsvaParam(exprData = t(TCGA_T),geneSets = geneset)
+pathway = gsva(pathway)
+path = data.frame(t(pathway))
+colnames(TCGA_T) = paste0('TCGA_T_',colnames(TCGA_T))
+colnames(COAD_P) = paste0('pro_',colnames(COAD_P))
+colnames(path) = paste0('path_',colnames(path))
+data = cbind(TCGA_T,COAD_P,path)
+nor_sd = function(x){
+  result = (x - mean(x)) / sd(x)
+  return(result)
+}
+data = data.frame(apply(data,2,nor_sd))
+data = data[,c('path_Zinc','TCGA_T_CDX2','pro_CDX2','TCGA_T_CD24')]
+cormat = round(cor(data),2)
+cormat = reshape::melt(cormat)
+cormat$X1 = factor(cormat$X1, levels = rev(levels(cormat$X1)))
+
+######## Main figure 2c
+pdf("/github/Figure/Main/Fig2/c_corrlation_plot.pdf", width = 8, height = 4)
+ggplot(data = cormat, aes(X2, X1, fill = value))+
+  geom_tile(color = "white")+
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1)) +
+  coord_fixed()
+dev.off()
+
+
+CPTAC_T = read.csv('/github/model_data/CPTAC/rsem.txt', header = T,row.names = 1, sep = '\t')
+CPTAC_T = data.frame(t(CPTAC_T))
+COAD_P = read.csv('/github/model_data/CPTAC/coad_protein_activity.csv', header = T,row.names = 1)
+COAD_P = data.frame(t(COAD_P))
+geneset = list()
+geneset[[1]] =c('SLC39A1', 'SLC39A2', 'SLC39A3', 'SLC39A4', 'SLC39A5','SLC39A6','SLC39A8','SLC39A10','SLC39A14')
+names(geneset) = 'Zinc'
+pathway = gsvaParam(exprData = t(CPTAC_T),geneSets = geneset)
+pathway = gsva(pathway)
+path = data.frame(t(pathway))
+colnames(CPTAC_T) = paste0('TCGA_T_',colnames(CPTAC_T))
+colnames(COAD_P) = paste0('pro_',colnames(COAD_P))
+colnames(path) = paste0('path_',colnames(path))
+data = cbind(CPTAC_T,COAD_P,path)
+nor_sd = function(x){
+  result = (x - mean(x)) / sd(x)
+  return(result)
+}
+data = data.frame(apply(data,2,nor_sd))
+data = data[,c('path_Zinc','TCGA_T_CDX2','pro_CDX2','TCGA_T_CD24')]
+cormat = round(cor(data),2)
+cormat = reshape::melt(cormat)
+cormat$X1 = factor(cormat$X1, levels = rev(levels(cormat$X1)))
+
+######## Main figure 2c
+pdf("/github/Figure/Main/Fig2/c_CPTAC_Logic_corrlation_plot.pdf", width = 8, height = 4)
+ggplot(data = cormat, aes(X2, X1, fill = value))+
+  geom_tile(color = "white")+
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1)) +
+  coord_fixed()
+dev.off()

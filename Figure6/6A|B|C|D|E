@@ -1,0 +1,733 @@
+library(SPATA2)
+library(Seurat)
+library(purrr)
+library(stringr)
+library(dplyr)
+library(scales)
+library(ggplot2)
+library(nichenetr)
+library(NICHES)
+library(reshape2)
+
+
+C1 = readRDS('/github/spatial_data/Interaction/C1_final.rds')
+C2 = readRDS('/github/spatial_data/Interaction/C2_final.rds')
+C3 = readRDS('/github/spatial_data/Interaction/C3_final.rds')
+C4 = readRDS('/github/spatial_data/Interaction/C4_final.rds')
+
+celltype_C1 = readRDS('/github/spatial_data/SPOTlight/C1_spotlight.rds')
+celltype_C2 = readRDS('/github/spatial_data/SPOTlight/C2_spotlight.rds')
+celltype_C3 = readRDS('/github/spatial_data/SPOTlight/C3_spotlight.rds')
+celltype_C4 = readRDS('/github/spatial_data/SPOTlight/C4_spotlight.rds')
+celltype_C1 = celltype_C1[[2]][,-16]
+celltype_C2 = celltype_C2[[2]][,-16]
+celltype_C3 = celltype_C3[[2]][,-16]
+celltype_C4 = celltype_C4[[2]][,-16]
+z_normalize = function(x) {(x - mean(x)) / sd(x)}
+celltype_C1 = apply(celltype_C1,2, z_normalize)
+celltype_C2 = apply(celltype_C2,2, z_normalize)
+celltype_C3 = apply(celltype_C3,2, z_normalize)
+celltype_C4 = apply(celltype_C4,2, z_normalize)
+celltype_C1 = cbind(celltype_C1,colnames(celltype_C1)[apply(celltype_C1, 1, which.max)])
+celltype_C2 = cbind(celltype_C2,colnames(celltype_C2)[apply(celltype_C2, 1, which.max)])
+celltype_C3 = cbind(celltype_C3,colnames(celltype_C3)[apply(celltype_C3, 1, which.max)])
+celltype_C4 = cbind(celltype_C4,colnames(celltype_C4)[apply(celltype_C4, 1, which.max)])
+colnames(celltype_C1)[16] = 'celltype'
+colnames(celltype_C2)[16] = 'celltype'
+colnames(celltype_C3)[16] = 'celltype'
+colnames(celltype_C4)[16] = 'celltype'
+C1@meta.data = cbind(C1@meta.data,celltype_C1)
+C2@meta.data = cbind(C2@meta.data,celltype_C2)
+C3@meta.data = cbind(C3@meta.data,celltype_C3)
+C4@meta.data = cbind(C4@meta.data,celltype_C4)
+
+DefaultAssay(C1) = 'SCT'
+C1 = FindClusters(C1,verbose = F, resolution = 0.9)
+C1 = RunUMAP(C1,reduction = 'pca', dims = 1:30)
+DefaultAssay(C2) = 'SCT'
+C2 = FindClusters(C2,verbose = F, resolution = 0.9)
+C2 = RunUMAP(C2,reduction = 'pca', dims = 1:30)
+DefaultAssay(C3) = 'SCT'
+C3 = FindClusters(C3,verbose = F, resolution = 0.9)
+C3 = RunUMAP(C3,reduction = 'pca', dims = 1:30)
+DefaultAssay(C4) = 'SCT'
+C4 = FindClusters(C4,verbose = F, resolution = 0.9)
+C4 = RunUMAP(C4,reduction = 'pca', dims = 1:30)
+
+DefaultAssay(C1) = 'Spatial'
+C1_spata = asSPATA2(object = C1, sample_name = 'C1', assay_modality = "gene", img_scale_fct = 'lowres', assay_name = 'Spatial', platform = "VisiumSmall")
+rownames(C1_spata@meta_obs) = NULL
+DefaultAssay(C2) = 'Spatial'
+C2_spata = asSPATA2(object = C2, sample_name = 'C2', assay_modality = "gene", img_scale_fct = 'lowres', assay_name = 'Spatial', platform = "VisiumSmall")
+rownames(C2_spata@meta_obs) = NULL
+DefaultAssay(C3) = 'Spatial'
+C3_spata = asSPATA2(object = C3, sample_name = 'C3', assay_modality = "gene", img_scale_fct = 'lowres', assay_name = 'Spatial', platform = "VisiumSmall")
+rownames(C3_spata@meta_obs) = NULL
+DefaultAssay(C4) = 'Spatial'
+C4_spata = asSPATA2(object = C4, sample_name = 'C4', assay_modality = "gene", img_scale_fct = 'lowres', assay_name = 'Spatial', platform = "VisiumSmall")
+rownames(C4_spata@meta_obs) = NULL
+
+C1_spata@meta_obs$CD24_SIGLEC10 = as.vector(C1@assays$NeighborhoodToCell$scale.data['CD24—SIGLEC10',])
+C1_spata@meta_obs$CD47_SIRPA = as.vector(C1@assays$NeighborhoodToCell$scale.data['CD47—SIRPA',])
+C1_path = data.frame(t(C1@assays$escape.ssGSEA$data))
+C1_spata@meta_obs = cbind(C1_spata@meta_obs,C1_path)
+C2_spata@meta_obs$CD24_SIGLEC10 = as.vector(C2@assays$NeighborhoodToCell$scale.data['CD24—SIGLEC10',])
+C2_spata@meta_obs$CD47_SIRPA = as.vector(C2@assays$NeighborhoodToCell$scale.data['CD47—SIRPA',])
+C2_path = data.frame(t(C2@assays$escape.ssGSEA$data))
+C2_spata@meta_obs = cbind(C2_spata@meta_obs,C2_path)
+C3_spata@meta_obs$CD24_SIGLEC10 = as.vector(C3@assays$NeighborhoodToCell$scale.data['CD24—SIGLEC10',])
+C3_spata@meta_obs$CD47_SIRPA = as.vector(C3@assays$NeighborhoodToCell$scale.data['CD47—SIRPA',])
+C3_path = data.frame(t(C3@assays$escape.ssGSEA$data))
+C3_spata@meta_obs = cbind(C3_spata@meta_obs,C3_path)
+C4_spata@meta_obs$CD24_SIGLEC10 = as.vector(C4@assays$NeighborhoodToCell$scale.data['CD24—SIGLEC10',])
+C4_spata@meta_obs$CD47_SIRPA = as.vector(C4@assays$NeighborhoodToCell$scale.data['CD47—SIRPA',])
+C4_path = data.frame(t(C4@assays$escape.ssGSEA$data))
+C4_spata@meta_obs = cbind(C4_spata@meta_obs,C4_path)
+
+C1_spata@meta_obs$Cancer = as.numeric(C1_spata@meta_obs$Cancer)
+C1_spata@meta_obs$moMC = as.numeric(C1_spata@meta_obs$moMC)
+C1_spata@meta_obs$RTMC = as.numeric(C1_spata@meta_obs$RTMC)
+C1_spata@meta_obs$moDC = as.numeric(C1_spata@meta_obs$moDC)
+C2_spata@meta_obs$Cancer = as.numeric(C2_spata@meta_obs$Cancer)
+C2_spata@meta_obs$moMC = as.numeric(C2_spata@meta_obs$moMC)
+C2_spata@meta_obs$RTMC = as.numeric(C2_spata@meta_obs$RTMC)
+C2_spata@meta_obs$moDC = as.numeric(C2_spata@meta_obs$moDC)
+C3_spata@meta_obs$Cancer = as.numeric(C3_spata@meta_obs$Cancer)
+C3_spata@meta_obs$moMC = as.numeric(C3_spata@meta_obs$moMC)
+C3_spata@meta_obs$RTMC = as.numeric(C3_spata@meta_obs$RTMC)
+C3_spata@meta_obs$moDC = as.numeric(C3_spata@meta_obs$moDC)
+C4_spata@meta_obs$Cancer = as.numeric(C4_spata@meta_obs$Cancer)
+C4_spata@meta_obs$moMC = as.numeric(C4_spata@meta_obs$moMC)
+C4_spata@meta_obs$RTMC = as.numeric(C4_spata@meta_obs$RTMC)
+C4_spata@meta_obs$moDC = as.numeric(C4_spata@meta_obs$moDC)
+
+
+# C1
+C1_data = C1@assays$Spatial$scale.data[c('CDX2','CD24','SIGLEC10','CD47','SIRPA'),]
+C1_data = rbind(C1_data,C1@assays$NeighborhoodToCell$scale.data['CD24—SIGLEC10',])
+C1_data = rbind(C1_data,C1@assays$NeighborhoodToCell$scale.data['CD47—SIRPA',])
+C1_data = rbind(C1_data,C1@meta.data$CDX2PA,as.numeric(C1@meta.data$Cancer),as.numeric(C1@meta.data$moDC),
+                as.numeric(C1@meta.data$moMC),as.numeric(C1@meta.data$RTMC))
+rownames(C1_data)[6:12] = c('CD24-SIGLEC10','CD47-SIRPA', 'CDX2PA','Cancer', 'moDC', 'moMC', 'RTMC')
+C1_data = rbind(C1_data,C1@assays$escape.ssGSEA$data)
+
+cluster_0 = data.frame(t(C1_data[,which(C1$seurat_clusters == 0)]))
+cluster_1 = data.frame(t(C1_data[,which(C1$seurat_clusters == 1)]))
+cluster_2 = data.frame(t(C1_data[,which(C1$seurat_clusters == 2)]))
+cluster_3 = data.frame(t(C1_data[,which(C1$seurat_clusters == 3)]))
+cluster_4 = data.frame(t(C1_data[,which(C1$seurat_clusters == 4)]))
+cluster_5 = data.frame(t(C1_data[,which(C1$seurat_clusters == 5)]))
+cluster_6 = data.frame(t(C1_data[,which(C1$seurat_clusters == 6)]))
+cluster_7 = data.frame(t(C1_data[,which(C1$seurat_clusters == 7)]))
+cluster_8 = data.frame(t(C1_data[,which(C1$seurat_clusters == 8)]))
+cluster_9 = data.frame(t(C1_data[,which(C1$seurat_clusters == 9)]))
+cluster_10 = data.frame(t(C1_data[,which(C1$seurat_clusters == 10)]))
+cluster_11 = data.frame(t(C1_data[,which(C1$seurat_clusters == 11)]))
+
+C1_data = data.frame(t(C1_data))
+C1_data[,'Cluster'] = 0
+C1_data[which(rownames(C1_data) %in% rownames(cluster_0)),'Cluster'] = 'C0'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_1)),'Cluster'] = 'C1'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_2)),'Cluster'] = 'C2'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_3)),'Cluster'] = 'C3'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_4)),'Cluster'] = 'C4'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_5)),'Cluster'] = 'C5'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_6)),'Cluster'] = 'C6'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_7)),'Cluster'] = 'C7'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_8)),'Cluster'] = 'C8'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_9)),'Cluster'] = 'C9'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_10)),'Cluster'] = 'C10'
+C1_data[which(rownames(C1_data) %in% rownames(cluster_11)),'Cluster'] = 'C11'
+
+
+C1_res = c()
+for(i in 1:35){
+  C1_pval = c()
+  for(j in c('C0','C1','C2','C3','C4','C5','C6','C7','C8','C9','C10','C11')){
+    C1_pval = c(C1_pval, t.test(C1_data[which(C1_data$Cluster == j),i],C1_data[which(C1_data$Cluster != j),i])[[3]])
+  }
+  C1_res = cbind(C1_res,C1_pval)
+}
+colnames(C1_res) = colnames(C1_data)[1:35]
+
+
+cluster_0 = apply(cluster_0,2,mean)
+cluster_1 = apply(cluster_1,2,mean)
+cluster_2 = apply(cluster_2,2,mean)
+cluster_3 = apply(cluster_3,2,mean)
+cluster_4 = apply(cluster_4,2,mean)
+cluster_5 = apply(cluster_5,2,mean)
+cluster_6 = apply(cluster_6,2,mean)
+cluster_7 = apply(cluster_7,2,mean)
+cluster_8 = apply(cluster_8,2,mean)
+cluster_9 = apply(cluster_9,2,mean)
+cluster_10 = apply(cluster_10,2,mean)
+cluster_11 = apply(cluster_11,2,mean)
+
+expression_df = data.frame(cluster_0,cluster_1,cluster_2,cluster_3,cluster_4,cluster_5,cluster_6,cluster_7,
+                           cluster_8,cluster_9,cluster_10,cluster_11)
+expression_df = data.frame(t(expression_df))
+expression_df = expression_df %>% scale_quantile()
+expression_df[,'Niche'] = c('Niche0','Niche1', 'Niche2','Niche3','Niche4','Niche5','Niche6','Niche7',
+                            'Niche8','Niche9','Niche10','Niche11')
+expression_df = reshape2::melt(expression_df)
+expression_df[,'pvalue'] = reshape2::melt(C1_res)[,3]
+expression_df[,'pvalue'] = expression_df[,'pvalue'] + 0.0001
+
+colnames(C1_res)
+gene_list = c('Zinc.influc.by.SLC39', 'CDX2', 'CDX2PA', 
+              'CD24', 'SIGLEC10','CD24.SIGLEC10','CD47', 'SIRPA','CD47.SIRPA',
+              'KEGG.CD24.Do.not.eat.me.signal','KEGG.CD47.Do.not.eat.me.signal', 'negative.regulation.of.phagocytosis',
+              'negative.regulation.of.immune.response','regulation.of.cell.cell.adhesion', 
+              'Cancer', 'moDC', 'moMC', 'RTMC')
+
+expression_df = expression_df[which(expression_df$variable %in% gene_list),]
+levels(expression_df$variable) = gsub("influc", "influx", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("\\.", " ", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("CD24 SIGLEC10", "CD24-SIGLEC10 interaction", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("CD47 SIRPA", "CD47-SIRPA interaction", levels(expression_df$variable))
+
+
+x_order = c('Niche0','Niche1', 'Niche2','Niche3','Niche4','Niche5','Niche6','Niche7',
+            'Niche8','Niche9','Niche10','Niche11')
+y_order = c('Zinc influx by SLC39', 'CDX2','CDX2PA', 
+            'CD24', 'SIGLEC10', 'CD24-SIGLEC10 interaction',
+            'KEGG CD24 Do not eat me signal', 'negative regulation of phagocytosis',
+            'negative regulation of immune response','regulation of cell cell adhesion', 
+            'Cancer', 'moDC', 'moMC', 'RTMC')
+
+######## Supple figure 6c
+pdf("/github/Figure/Supple/Fig6/c_C1_heatmap.pdf", width = 16, height = 10)
+ggplot(expression_df[which(expression_df$variable %in% y_order),], 
+       aes(x = factor(Niche, level = x_order), y = factor(variable, level = y_order))) + theme_classic() +
+  geom_point(aes(size = -log10(pvalue), fill = value), shape = 21) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()
+
+######## Supple figure 6d
+y_order2 = c('CD47', 'SIRPA','CD47-SIRPA interaction','KEGG CD47 Do not eat me signal')
+pdf("/github/Figure/Supple/Fig6/d_C1_CD47_heatmap.pdf", width = 16, height = 5)
+ggplot(expression_df[which(expression_df$variable %in% y_order2),], 
+       aes(x = factor(Niche, level = x_order), y = factor(variable, level = y_order2))) + theme_classic() +
+  geom_point(aes(size = -log10(pvalue), fill = value), shape = 21) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()
+
+
+# C2
+C2_data = C2@assays$Spatial$scale.data[c('CDX2','CD24','SIGLEC10','CD47','SIRPA'),]
+C2_data = rbind(C2_data,C2@assays$NeighborhoodToCell$scale.data['CD24—SIGLEC10',])
+C2_data = rbind(C2_data,C2@assays$NeighborhoodToCell$scale.data['CD47—SIRPA',])
+C2_data = rbind(C2_data,C2@meta.data$CDX2PA,as.numeric(C2@meta.data$Cancer),as.numeric(C2@meta.data$moDC),
+                as.numeric(C2@meta.data$moMC),as.numeric(C2@meta.data$RTMC))
+rownames(C2_data)[6:12] = c('CD24-SIGLEC10','CD47-SIRPA', 'CDX2PA', 'Cancer', 'moDC', 'moMC', 'RTMC')
+C2_data = rbind(C2_data,C2@assays$escape.ssGSEA$data)
+
+cluster_0 = data.frame(t(C2_data[,which(C2$seurat_clusters == 0)]))
+cluster_1 = data.frame(t(C2_data[,which(C2$seurat_clusters == 1)]))
+cluster_2 = data.frame(t(C2_data[,which(C2$seurat_clusters == 2)]))
+cluster_3 = data.frame(t(C2_data[,which(C2$seurat_clusters == 3)]))
+cluster_4 = data.frame(t(C2_data[,which(C2$seurat_clusters == 4)]))
+cluster_5 = data.frame(t(C2_data[,which(C2$seurat_clusters == 5)]))
+cluster_6 = data.frame(t(C2_data[,which(C2$seurat_clusters == 6)]))
+cluster_7 = data.frame(t(C2_data[,which(C2$seurat_clusters == 7)]))
+cluster_8 = data.frame(t(C2_data[,which(C2$seurat_clusters == 8)]))
+cluster_9 = data.frame(t(C2_data[,which(C2$seurat_clusters == 9)]))
+cluster_10 = data.frame(t(C2_data[,which(C2$seurat_clusters == 10)]))
+cluster_11 = data.frame(t(C2_data[,which(C2$seurat_clusters == 11)]))
+cluster_12 = data.frame(t(C2_data[,which(C2$seurat_clusters == 12)]))
+
+C2_data = data.frame(t(C2_data))
+C2_data[,'Cluster'] = 0
+C2_data[which(rownames(C2_data) %in% rownames(cluster_0)),'Cluster'] = 'C0'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_1)),'Cluster'] = 'C1'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_2)),'Cluster'] = 'C2'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_3)),'Cluster'] = 'C3'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_4)),'Cluster'] = 'C4'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_5)),'Cluster'] = 'C5'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_6)),'Cluster'] = 'C6'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_7)),'Cluster'] = 'C7'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_8)),'Cluster'] = 'C8'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_9)),'Cluster'] = 'C9'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_10)),'Cluster'] = 'C10'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_11)),'Cluster'] = 'C11'
+C2_data[which(rownames(C2_data) %in% rownames(cluster_12)),'Cluster'] = 'C12'
+
+C2_res = c()
+for(i in 1:35){
+  C2_pval = c()
+  for(j in c('C0','C1','C2','C3','C4','C5','C6','C7','C8','C9','C10','C11','C12')){
+    C2_pval = c(C2_pval, t.test(C2_data[which(C2_data$Cluster == j),i],C2_data[which(C2_data$Cluster != j),i])[[3]])
+  }
+  C2_res = cbind(C2_res,C2_pval)
+}
+colnames(C2_res) = colnames(C2_data)[1:35]
+
+cluster_0 = apply(cluster_0,2,mean)
+cluster_1 = apply(cluster_1,2,mean)
+cluster_2 = apply(cluster_2,2,mean)
+cluster_3 = apply(cluster_3,2,mean)
+cluster_4 = apply(cluster_4,2,mean)
+cluster_5 = apply(cluster_5,2,mean)
+cluster_6 = apply(cluster_6,2,mean)
+cluster_7 = apply(cluster_7,2,mean)
+cluster_8 = apply(cluster_8,2,mean)
+cluster_9 = apply(cluster_9,2,mean)
+cluster_10 = apply(cluster_10,2,mean)
+cluster_11 = apply(cluster_11,2,mean)
+cluster_12 = apply(cluster_12,2,mean)
+
+expression_df = data.frame(cluster_0,cluster_1,cluster_2,cluster_3,cluster_4,cluster_5,cluster_6,cluster_7,
+                           cluster_8,cluster_9,cluster_10,cluster_11,cluster_12)
+expression_df = data.frame(t(expression_df))
+expression_df = expression_df %>% scale_quantile()
+expression_df[,'Niche'] = c('Niche0','Niche1', 'Niche2','Niche3','Niche4','Niche5','Niche6','Niche7',
+                            'Niche8','Niche9','Niche10','Niche11','Niche12')
+expression_df = reshape2::melt(expression_df)
+expression_df[,'pvalue'] = reshape2::melt(C2_res)[,3]
+expression_df[,'pvalue'] = expression_df[,'pvalue'] + 0.0001
+
+gene_list = c('Zinc.influc.by.SLC39', 'CDX2', 'CDX2PA', 
+              'CD24', 'SIGLEC10','CD24.SIGLEC10','CD47', 'SIRPA','CD47.SIRPA',
+              'KEGG.CD24.Do.not.eat.me.signal','KEGG.CD47.Do.not.eat.me.signal', 'negative.regulation.of.phagocytosis',
+              'negative.regulation.of.immune.response','regulation.of.cell.cell.adhesion', 
+              'Cancer', 'moDC', 'moMC', 'RTMC')
+
+expression_df = expression_df[which(expression_df$variable %in% gene_list),]
+levels(expression_df$variable) = gsub("influc", "influx", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("\\.", " ", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("CD24 SIGLEC10", "CD24-SIGLEC10 interaction", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("CD47 SIRPA", "CD47-SIRPA interaction", levels(expression_df$variable))
+
+
+x_order = c('Niche0','Niche1', 'Niche2','Niche3','Niche4','Niche5','Niche6','Niche7',
+            'Niche8','Niche9','Niche10','Niche11','Niche12')
+y_order = c('Zinc influx by SLC39', 'CDX2','CDX2PA', 
+            'CD24', 'SIGLEC10', 'CD24-SIGLEC10 interaction',
+            'KEGG CD24 Do not eat me signal', 'negative regulation of phagocytosis',
+            'negative regulation of immune response','regulation of cell cell adhesion', 
+            'Cancer', 'moDC', 'moMC', 'RTMC')
+
+######## Main figure 6e
+pdf("/github/Figure/Main/Fig6/e_C2_heatmap.pdf", width = 16, height = 10)
+ggplot(expression_df[which(expression_df$variable %in% y_order),], 
+       aes(x = factor(Niche, level = x_order), y = factor(variable, level = y_order))) + theme_classic() +
+  geom_point(aes(size = -log10(pvalue), fill = value), shape = 21) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()
+
+######## Supple figure 6d
+y_order2 = c('CD47', 'SIRPA','CD47-SIRPA interaction','KEGG CD47 Do not eat me signal')
+pdf("/github/Figure/Supple/Fig6/d_C2_CD47_heatmap.pdf", width = 16, height = 5)
+ggplot(expression_df[which(expression_df$variable %in% y_order2),], 
+       aes(x = factor(Niche, level = x_order), y = factor(variable, level = y_order2))) + theme_classic() +
+  geom_point(aes(size = -log10(pvalue), fill = value), shape = 21) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()
+
+
+# C3
+C3_data = C3@assays$Spatial$scale.data[c('CDX2','CD24','SIGLEC10','CD47','SIRPA'),]
+C3_data = rbind(C3_data,C3@assays$NeighborhoodToCell$scale.data['CD24—SIGLEC10',])
+C3_data = rbind(C3_data,C3@assays$NeighborhoodToCell$scale.data['CD47—SIRPA',])
+C3_data = rbind(C3_data,C3@meta.data$CDX2PA,as.numeric(C3@meta.data$Cancer),as.numeric(C3@meta.data$moDC),
+                as.numeric(C3@meta.data$moMC),as.numeric(C3@meta.data$RTMC))
+rownames(C3_data)[6:12] = c('CD24-SIGLEC10','CD47-SIRPA', 'CDX2PA', 'Cancer', 'moDC', 'moMC', 'RTMC')
+C3_data = rbind(C3_data,C3@assays$escape.ssGSEA$data)
+
+cluster_0 = data.frame(t(C3_data[,which(C3$seurat_clusters == 0)]))
+cluster_1 = data.frame(t(C3_data[,which(C3$seurat_clusters == 1)]))
+cluster_2 = data.frame(t(C3_data[,which(C3$seurat_clusters == 2)]))
+cluster_3 = data.frame(t(C3_data[,which(C3$seurat_clusters == 3)]))
+cluster_4 = data.frame(t(C3_data[,which(C3$seurat_clusters == 4)]))
+cluster_5 = data.frame(t(C3_data[,which(C3$seurat_clusters == 5)]))
+cluster_6 = data.frame(t(C3_data[,which(C3$seurat_clusters == 6)]))
+cluster_7 = data.frame(t(C3_data[,which(C3$seurat_clusters == 7)]))
+cluster_8 = data.frame(t(C3_data[,which(C3$seurat_clusters == 8)]))
+cluster_9 = data.frame(t(C3_data[,which(C3$seurat_clusters == 9)]))
+cluster_10 = data.frame(t(C3_data[,which(C3$seurat_clusters == 10)]))
+cluster_11 = data.frame(t(C3_data[,which(C3$seurat_clusters == 11)]))
+cluster_12 = data.frame(t(C3_data[,which(C3$seurat_clusters == 12)]))
+cluster_13 = data.frame(t(C3_data[,which(C3$seurat_clusters == 13)]))
+cluster_14 = data.frame(t(C3_data[,which(C3$seurat_clusters == 14)]))
+
+C3_data = data.frame(t(C3_data))
+C3_data[,'Cluster'] = 0
+C3_data[which(rownames(C3_data) %in% rownames(cluster_0)),'Cluster'] = 'C0'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_1)),'Cluster'] = 'C1'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_2)),'Cluster'] = 'C2'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_3)),'Cluster'] = 'C3'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_4)),'Cluster'] = 'C4'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_5)),'Cluster'] = 'C5'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_6)),'Cluster'] = 'C6'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_7)),'Cluster'] = 'C7'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_8)),'Cluster'] = 'C8'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_9)),'Cluster'] = 'C9'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_10)),'Cluster'] = 'C10'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_11)),'Cluster'] = 'C11'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_12)),'Cluster'] = 'C12'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_13)),'Cluster'] = 'C13'
+C3_data[which(rownames(C3_data) %in% rownames(cluster_14)),'Cluster'] = 'C14'
+
+C3_res = c()
+for(i in 1:35){
+  C3_pval = c()
+  for(j in c('C0','C1','C2','C3','C4','C5','C6','C7','C8','C9','C10','C11','C12','C13','C14')){
+    C3_pval = c(C3_pval, t.test(C3_data[which(C3_data$Cluster == j),i],C3_data[which(C3_data$Cluster != j),i])[[3]])
+  }
+  C3_res = cbind(C3_res,C3_pval)
+}
+colnames(C3_res) = colnames(C3_data)[1:35]
+
+cluster_0 = apply(cluster_0,2,mean)
+cluster_1 = apply(cluster_1,2,mean)
+cluster_2 = apply(cluster_2,2,mean)
+cluster_3 = apply(cluster_3,2,mean)
+cluster_4 = apply(cluster_4,2,mean)
+cluster_5 = apply(cluster_5,2,mean)
+cluster_6 = apply(cluster_6,2,mean)
+cluster_7 = apply(cluster_7,2,mean)
+cluster_8 = apply(cluster_8,2,mean)
+cluster_9 = apply(cluster_9,2,mean)
+cluster_10 = apply(cluster_10,2,mean)
+cluster_11 = apply(cluster_11,2,mean)
+cluster_12 = apply(cluster_12,2,mean)
+cluster_13 = apply(cluster_13,2,mean)
+cluster_14 = apply(cluster_14,2,mean)
+
+expression_df = data.frame(cluster_0,cluster_1,cluster_2,cluster_3,cluster_4,cluster_5,cluster_6,
+                           cluster_7,cluster_8,cluster_9,cluster_10,cluster_11,cluster_12,cluster_13,cluster_14)
+expression_df = data.frame(t(expression_df))
+expression_df = expression_df %>% scale_quantile()
+expression_df[,'Niche'] = c('Niche0','Niche1', 'Niche2','Niche3','Niche4','Niche5','Niche6',
+                            'Niche7','Niche8', 'Niche9','Niche10','Niche11','Niche12','Niche13','Niche14')
+expression_df = reshape2::melt(expression_df)
+expression_df[,'pvalue'] = reshape2::melt(C3_res)[,3]
+expression_df[,'pvalue'] = expression_df[,'pvalue'] + 0.0001
+
+gene_list = c('Zinc.influc.by.SLC39', 'CDX2', 'CDX2PA', 
+              'CD24', 'SIGLEC10','CD24.SIGLEC10','CD47', 'SIRPA','CD47.SIRPA',
+              'KEGG.CD24.Do.not.eat.me.signal','KEGG.CD47.Do.not.eat.me.signal', 'negative.regulation.of.phagocytosis',
+              'negative.regulation.of.immune.response','regulation.of.cell.cell.adhesion', 
+              'Cancer', 'moDC', 'moMC', 'RTMC')
+
+expression_df = expression_df[which(expression_df$variable %in% gene_list),]
+levels(expression_df$variable) = gsub("influc", "influx", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("\\.", " ", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("CD24 SIGLEC10", "CD24-SIGLEC10 interaction", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("CD47 SIRPA", "CD47-SIRPA interaction", levels(expression_df$variable))
+
+x_order = c('Niche0','Niche1', 'Niche2','Niche3','Niche4','Niche5','Niche6',
+            'Niche7','Niche8', 'Niche9','Niche10','Niche11','Niche12','Niche13','Niche14')
+y_order = c('Zinc influx by SLC39', 'CDX2','CDX2PA', 
+            'CD24', 'SIGLEC10', 'CD24-SIGLEC10 interaction',
+            'KEGG CD24 Do not eat me signal', 'negative regulation of phagocytosis',
+            'negative regulation of immune response','regulation of cell cell adhesion', 
+            'Cancer', 'moDC', 'moMC', 'RTMC')
+
+######## Main figure 6e
+pdf("/github/Figure/Main/Fig6/e_C3_heatmap.pdf", width = 16, height = 10)
+ggplot(expression_df[which(expression_df$variable %in% y_order),], 
+       aes(x = factor(Niche, level = x_order), y = factor(variable, level = y_order))) + theme_classic() +
+  geom_point(aes(size = -log10(pvalue), fill = value), shape = 21) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()
+
+######## Supple figure 6d
+y_order2 = c('CD47', 'SIRPA','CD47-SIRPA interaction','KEGG CD47 Do not eat me signal')
+pdf("/github/Figure/Supple/Fig6/d_C3_CD47_heatmap.pdf", width = 16, height = 5)
+ggplot(expression_df[which(expression_df$variable %in% y_order2),], 
+       aes(x = factor(Niche, level = x_order), y = factor(variable, level = y_order2))) + theme_classic() +
+  geom_point(aes(size = -log10(pvalue), fill = value), shape = 21) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()
+
+
+# C4
+C4_data = C4@assays$Spatial$scale.data[c('CDX2','CD24','SIGLEC10','CD47','SIRPA'),]
+C4_data = rbind(C4_data,C4@assays$NeighborhoodToCell$scale.data['CD24—SIGLEC10',])
+C4_data = rbind(C4_data,C4@assays$NeighborhoodToCell$scale.data['CD47—SIRPA',])
+C4_data = rbind(C4_data,C4@meta.data$CDX2PA,as.numeric(C4@meta.data$Cancer),as.numeric(C4@meta.data$moDC),
+                as.numeric(C4@meta.data$moMC),as.numeric(C4@meta.data$RTMC))
+rownames(C4_data)[6:12] = c('CD24-SIGLEC10','CD47-SIRPA', 'CDX2PA', 'Cancer', 'moDC', 'moMC', 'RTMC')
+C4_data = rbind(C4_data,C4@assays$escape.ssGSEA$data)
+
+cluster_0 = data.frame(t(C4_data[,which(C4$seurat_clusters == 0)]))
+cluster_1 = data.frame(t(C4_data[,which(C4$seurat_clusters == 1)]))
+cluster_2 = data.frame(t(C4_data[,which(C4$seurat_clusters == 2)]))
+cluster_3 = data.frame(t(C4_data[,which(C4$seurat_clusters == 3)]))
+cluster_4 = data.frame(t(C4_data[,which(C4$seurat_clusters == 4)]))
+cluster_5 = data.frame(t(C4_data[,which(C4$seurat_clusters == 5)]))
+cluster_6 = data.frame(t(C4_data[,which(C4$seurat_clusters == 6)]))
+cluster_7 = data.frame(t(C4_data[,which(C4$seurat_clusters == 7)]))
+cluster_8 = data.frame(t(C4_data[,which(C4$seurat_clusters == 8)]))
+cluster_9 = data.frame(t(C4_data[,which(C4$seurat_clusters == 9)]))
+cluster_10 = data.frame(t(C4_data[,which(C4$seurat_clusters == 10)]))
+
+C4_data = data.frame(t(C4_data))
+C4_data[,'Cluster'] = 0
+C4_data[which(rownames(C4_data) %in% rownames(cluster_0)),'Cluster'] = 'C0'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_1)),'Cluster'] = 'C1'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_2)),'Cluster'] = 'C2'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_3)),'Cluster'] = 'C3'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_4)),'Cluster'] = 'C4'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_5)),'Cluster'] = 'C5'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_6)),'Cluster'] = 'C6'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_7)),'Cluster'] = 'C7'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_8)),'Cluster'] = 'C8'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_9)),'Cluster'] = 'C9'
+C4_data[which(rownames(C4_data) %in% rownames(cluster_10)),'Cluster'] = 'C10'
+
+C4_res = c()
+for(i in 1:35){
+  C4_pval = c()
+  for(j in c('C0','C1','C2','C3','C4','C5','C6','C7','C8','C9','C10')){
+    C4_pval = c(C4_pval, t.test(C4_data[which(C4_data$Cluster == j),i],C4_data[which(C4_data$Cluster != j),i])[[3]])
+  }
+  C4_res = cbind(C4_res,C4_pval)
+}
+colnames(C4_res) = colnames(C4_data)[1:35]
+
+cluster_0 = apply(cluster_0,2,mean)
+cluster_1 = apply(cluster_1,2,mean)
+cluster_2 = apply(cluster_2,2,mean)
+cluster_3 = apply(cluster_3,2,mean)
+cluster_4 = apply(cluster_4,2,mean)
+cluster_5 = apply(cluster_5,2,mean)
+cluster_6 = apply(cluster_6,2,mean)
+cluster_7 = apply(cluster_7,2,mean)
+cluster_8 = apply(cluster_8,2,mean)
+cluster_9 = apply(cluster_9,2,mean)
+cluster_10 = apply(cluster_10,2,mean)
+
+expression_df = data.frame(cluster_0,cluster_1,cluster_2,cluster_3,cluster_4,cluster_5,cluster_6,
+                           cluster_7,cluster_8,cluster_9,cluster_10)
+expression_df = data.frame(t(expression_df))
+expression_df = expression_df %>% scale_quantile()
+expression_df[,'Niche'] = c('Niche0','Niche1', 'Niche2','Niche3','Niche4','Niche5','Niche6',
+                            'Niche7','Niche8','Niche9','Niche10')
+expression_df = reshape2::melt(expression_df)
+expression_df[,'pvalue'] = reshape2::melt(C4_res)[,3]
+expression_df[,'pvalue'] = expression_df[,'pvalue'] + 0.0001
+
+gene_list = c('Zinc.influc.by.SLC39', 'CDX2', 'CDX2PA', 
+              'CD24', 'SIGLEC10','CD24.SIGLEC10','CD47', 'SIRPA','CD47.SIRPA',
+              'KEGG.CD24.Do.not.eat.me.signal','KEGG.CD47.Do.not.eat.me.signal', 'negative.regulation.of.phagocytosis',
+              'negative.regulation.of.immune.response','regulation.of.cell.cell.adhesion',
+              'Cancer', 'moDC', 'moMC', 'RTMC')
+
+expression_df = expression_df[which(expression_df$variable %in% gene_list),]
+levels(expression_df$variable) = gsub("influc", "influx", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("\\.", " ", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("CD24 SIGLEC10", "CD24-SIGLEC10 interaction", levels(expression_df$variable))
+levels(expression_df$variable) = gsub("CD47 SIRPA", "CD47-SIRPA interaction", levels(expression_df$variable))
+
+x_order = c('Niche0','Niche1', 'Niche2','Niche3','Niche4','Niche5','Niche6',
+            'Niche7','Niche8','Niche9','Niche10')
+y_order = c('Zinc influx by SLC39', 'CDX2','CDX2PA', 
+            'CD24', 'SIGLEC10', 'CD24-SIGLEC10 interaction',  
+            'KEGG CD24 Do not eat me signal', 'negative regulation of phagocytosis',
+            'negative regulation of immune response','regulation of cell cell adhesion',
+            'Cancer', 'moDC', 'moMC', 'RTMC')
+
+######## Supple figure 6c
+pdf("/github/Figure/Supple/Fig6/c_C4_heatmap.pdf", width = 16, height = 10)
+ggplot(expression_df[which(expression_df$variable %in% y_order),], 
+       aes(x = factor(Niche, level = x_order), y = factor(variable, level = y_order))) + theme_classic() +
+  geom_point(aes(size = -log10(pvalue), fill = value), shape = 21) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()
+
+######## Supple figure 6d
+y_order2 = c('CD47', 'SIRPA','CD47-SIRPA interaction','KEGG CD47 Do not eat me signal')
+pdf("/github/Figure/Supple/Fig6/d_C4_CD47_heatmap.pdf", width = 16, height = 5)
+ggplot(expression_df[which(expression_df$variable %in% y_order2),], 
+       aes(x = factor(Niche, level = x_order), y = factor(variable, level = y_order2))) + theme_classic() +
+  geom_point(aes(size = -log10(pvalue), fill = value), shape = 21) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()
+
+
+C2_spata@meta_obs$majorcelltype = C2_spata@meta_obs$celltype  
+C2_spata@meta_obs$majorcelltype[which(C2_spata@meta_obs$majorcelltype == 'NKT')] = 'Tcell'
+C2_spata@meta_obs$majorcelltype[which(C2_spata@meta_obs$majorcelltype == 'cDC' |
+                                        C2_spata@meta_obs$majorcelltype == 'Mast' |
+                                        C2_spata@meta_obs$majorcelltype == 'moDC' |
+                                        C2_spata@meta_obs$majorcelltype == 'moMC' |
+                                        C2_spata@meta_obs$majorcelltype == 'Monocyte' |
+                                        C2_spata@meta_obs$majorcelltype == 'Neutrophil' |
+                                        C2_spata@meta_obs$majorcelltype == 'pDC' |
+                                        C2_spata@meta_obs$majorcelltype == 'RTMC')] = 'Myeloid'
+
+######## Main figure 6a
+pdf("/github/Figure/Main/Fig6/a_C2_celltype_major.pdf", width = 16, height = 8)
+plotSurface(C2_spata,'majorcelltype', clrp_adjust = c("Bcell" = "yellow", "Cancer" = "tomato","Endothelial" = "tan4",
+                                                      "Fibroblast" = "darkgreen", "Myeloid" = "blue",
+                                                      "Schwann" = "green", "Tcell" = "pink")) +
+  plotSurface(C2_spata,'seurat_clusters', clrp_adjust = c("0" = "coral", "1" = "pink","2" = "purple",
+                                                          "3" = "slateblue", "4" = "skyblue1", '5' = 'steelblue',
+                                                          "6" = "navy", "7" = "greenyellow", '8' = 'darkgreen',
+                                                          "9" = "orange", "10" = "goldenrod1", '11' = 'cornsilk',
+                                                          '12' = 'brown'))
+dev.off()
+
+
+png("/github/Figure/Main/Fig6/a_C2_celltype_major.png", width = 1600, height = 800)
+plotSurface(C2_spata,'majorcelltype', clrp_adjust = c("Bcell" = "yellow", "Cancer" = "tomato","Endothelial" = "tan4",
+                                                      "Fibroblast" = "darkgreen", "Myeloid" = "blue",
+                                                      "Schwann" = "green", "Tcell" = "pink")) +
+  plotSurface(C2_spata,'seurat_clusters',clrp_adjust = c("0" = "coral", "1" = "pink","2" = "purple",
+                                                         "3" = "slateblue", "4" = "skyblue1", '5' = 'steelblue',
+                                                         "6" = "navy", "7" = "greenyellow", '8' = 'darkgreen',
+                                                         "9" = "orange", "10" = "goldenrod1", '11' = 'cornsilk',
+                                                         '12' = 'brown'))
+dev.off()
+
+
+
+pdf("/github/Figure/Main/Fig6/a_C2_allcelltype.pdf", width = 16, height = 8)
+plotSurface(C2_spata,'celltype', clrp_adjust = c("Bcell" = "yellow", "Cancer" = "tomato","Endothelial" = "tan4",
+                                                 "Fibroblast" = "darkgreen", "Monocyte" = "lightblue","RMTC" = "darkblue",'moMC' = 'blue',
+                                                 'moDC' = 'steelblue','pDC' = 'purple', 'cDC' = 'orange','Neutrophil' = 'burlywood1', 'Mast' = 'azure',
+                                                 "Schwann" = "green", "Tcell" = "pink", 'NKT' = 'lightyellow')) +
+  plotSurface(C2_spata,'majorcelltype', clrp_adjust = c("Bcell" = "yellow", "Cancer" = "tomato","Endothelial" = "tan4",
+                                                        "Fibroblast" = "darkgreen", "Myeloid" = "blue",
+                                                        "Schwann" = "green", "Tcell" = "pink"))
+dev.off()
+
+
+png("/github/Figure/Main/Fig6/a_C2_allcelltype.png", width = 1600, height = 800)
+plotSurface(C2_spata,'celltype', clrp_adjust = c("Bcell" = "yellow", "Cancer" = "tomato","Endothelial" = "tan4",
+                                                 "Fibroblast" = "darkgreen", "Monocyte" = "lightblue","RMTC" = "darkblue",'moMC' = 'blue',
+                                                 'moDC' = 'steelblue','pDC' = 'purple', 'cDC' = 'orange','Neutrophil' = 'burlywood1', 'Mast' = 'azure',
+                                                 "Schwann" = "green", "Tcell" = "pink", 'NKT' = 'lightyellow')) +
+  plotSurface(C2_spata,'majorcelltype', clrp_adjust = c("Bcell" = "yellow", "Cancer" = "tomato","Endothelial" = "tan4",
+                                                        "Fibroblast" = "darkgreen", "Myeloid" = "blue",
+                                                        "Schwann" = "green", "Tcell" = "pink"))
+dev.off()
+
+quantile(C2_spata@meta_obs$CD24_SIGLEC10,0.8) #0.8354027
+C2_spata = createNumericAnnotations(
+  object = C2_spata, 
+  variable = "CD24_SIGLEC10", 
+  threshold = ">0.8354027", 
+  inner_borders = T, # default, allows "holes" inside the annotation
+  id = "CD24_SIGLEC10", 
+  force1 = F,concavity = 1.5,overwrite = T)
+
+
+######## Main figure 6b
+pdf("/github/Figure/Main/Fig6/b_C2_CD24_SIGLEC10.pdf", width = 16, height = 8)
+plotSurface(C2_spata, color_by = "CD24", pt_clrsp = 'turbo')  + 
+  plotSurface(C2_spata, color_by = "SIGLEC10", pt_clrsp = 'turbo') +
+  plotSurface(C2_spata, color_by = "CD24_SIGLEC10", pt_clrsp = 'turbo') + 
+  ggpLayerSpatAnnOutline(C2_spata, ids = c('CD24_SIGLEC10_1', 'CD24_SIGLEC10_2', 'CD24_SIGLEC10_3')) 
+dev.off()
+
+png("/github/Figure/Main/Fig6/b_C2_CD24_SIGLEC10.png", width = 1600, height = 800)
+plotSurface(C2_spata, color_by = "CD24", pt_clrsp = 'turbo')  + 
+  plotSurface(C2_spata, color_by = "SIGLEC10", pt_clrsp = 'turbo') +
+  plotSurface(C2_spata, color_by = "CD24_SIGLEC10", pt_clrsp = 'turbo') + 
+  ggpLayerSpatAnnOutline(C2_spata, ids = c('CD24_SIGLEC10_1', 'CD24_SIGLEC10_2', 'CD24_SIGLEC10_3')) 
+dev.off()
+
+
+C2_test = C2_spata
+C2_test = identifyTissueOutline(C2_test, method = "obs")
+C2_id = getSpatAnnIds(C2_test)
+C2_coords_df = getCoordsDfSA(C2_test, ids = C2_id, unit = "mm", binwidth = "200um", core0 = T) 
+C2_test = addFeatures(C2_test, feature_df = C2_coords_df[,c("barcodes", "dist", "bins_dist")], overwrite = T)
+C2_test = runSPARKX(C2_test)
+C2_sparkx_genes = getSparkxGenes(C2_test, threshold_pval = 0.05)
+C2_sas_out = spatialAnnotationScreening(
+  object = C2_test, 
+  ids = C2_id, 
+  variables = C2_sparkx_genes, 
+  core = FALSE, 
+  distance = "dte") 
+C2_screening_dir_layer = ggpLayerScreeningDirectionSAS(C2_test, ids = C2_id, line_size = 0.5)
+sas_areas = color_vector(clrp = "npg", names = c("core", "environment", "periphery"))
+
+
+######## Supple figure 6a
+pdf("/github/Figure/Supple/Fig6/a_C2_core_environment.pdf", width = 16, height = 8)
+plotSurface(C2_sas_out, color_by = "rel_loc", clrp_adjust = sas_areas) +
+  C2_screening_dir_layer +
+  plotSurface(C2_sas_out, color_by = "dist", fill = alpha("lightgrey", 0.25)) +
+  labs(color = "Dist [mm]") + 
+  C2_screening_dir_layer
+dev.off()
+
+png("/github/Figure/Supple/Fig6/a_C2_core_environment.png", width = 1600, height = 800)
+plotSurface(C2_sas_out, color_by = "rel_loc", clrp_adjust = sas_areas) +
+  C2_screening_dir_layer +
+  plotSurface(C2_sas_out, color_by = "dist", fill = alpha("lightgrey", 0.25)) +
+  labs(color = "Dist [mm]") + 
+  C2_screening_dir_layer
+dev.off()
+
+
+######## Main figure 6c
+pdf("/github/Figure/Main/Fig6/c_C2_distance1.pdf", width = 16, height = 8)
+plotSurface(C2_spata, color_by = 'KEGG.CD24.Do.not.eat.me.signal',pt_clrsp = 'turbo',normalize = T) + 
+  ggpLayerSpatAnnOutline(C2_spata, ids =C2_id) +
+  plotSurface(C2_spata, color_by = 'negative.regulation.of.phagocytosis',pt_clrsp = 'turbo',normalize = T) + 
+  ggpLayerSpatAnnOutline(C2_spata, ids =C2_id) +
+  plotSurface(C2_spata, color_by = 'regulation.of.cell.cell.adhesion',pt_clrsp = 'turbo',normalize = T) + 
+  ggpLayerSpatAnnOutline(C2_spata, ids =C2_id) 
+dev.off()
+
+png("/github/Figure/Main/Fig6/c_C2_distance1.png", width = 1600, height = 800)
+plotSurface(C2_spata, color_by = 'KEGG.CD24.Do.not.eat.me.signal',pt_clrsp = 'turbo',normalize = T) + 
+  ggpLayerSpatAnnOutline(C2_spata, ids =C2_id) +
+  plotSurface(C2_spata, color_by = 'negative.regulation.of.phagocytosis',pt_clrsp = 'turbo',normalize = T) + 
+  ggpLayerSpatAnnOutline(C2_spata, ids =C2_id) +
+  plotSurface(C2_spata, color_by = 'regulation.of.cell.cell.adhesion',pt_clrsp = 'turbo',normalize = T) + 
+  ggpLayerSpatAnnOutline(C2_spata, ids =C2_id) 
+dev.off()
+
+
+######## Main figure 6d
+pdf("/github/Figure/Main/Fig6/d_C2_distance2.pdf", width = 16, height = 8)
+plotSasLineplot(
+  object = C2_test, 
+  variables = c("KEGG.CD24.Do.not.eat.me.signal",'negative.regulation.of.phagocytosis','regulation.of.cell.cell.adhesion'),
+  ids = C2_id, 
+  line_color = "blue"
+) + labs(x = "Distance to CD24-SIGLEC10 interaction (mm)")
+dev.off()
+
+
+######## Supple figure 6b
+pdf("/github/Figure/Supple/Fig6/b_C2_logic_distance.pdf", width = 16, height = 8)
+plotSasLineplot(
+  object = C2_test, 
+  variables = c("Zinc.influc.by.SLC39",'CDX2','CDX2PA','CD24','SIGLEC10'),
+  ids = C2_id, 
+  line_color = "blue"
+) + labs(x = "Distance to CD24-SIGLEC10 interaction (mm)")
+dev.off()

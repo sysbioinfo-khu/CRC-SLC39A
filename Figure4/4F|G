@@ -1,0 +1,186 @@
+library(CIBERSORT)
+library(preprocessCore )
+library(DWLS)
+library(survival)
+library(survminer)
+require(maxstat)
+require(dplyr)
+require(Ternary)
+library(openxlsx)
+library(dichromat)
+require(cowplot)
+
+
+signature = read.csv('/github/singlecell_data/SG/data/Cancer/signature.csv', header = T, row.names = 1)
+signature = as.matrix(signature)
+tpm = read.csv('/github/model_data/TCGA/COAD_tpm.csv', header = T, row.names = 1)
+tpm = as.matrix(tpm)
+terminal = cibersort(signature,tpm)
+arc = read.csv('/github/model_data/Archetype/arc_data.csv', header = T, row.names = 1)
+arc[,c('Terminal1','Terminal2','Terminal3')] = terminal[rownames(arc),c('Terminal1','Terminal2','Terminal3')]
+colnames(arc)[1:4] = c('Arc1','Arc2','Arc3','sample')
+
+coord.V = rbind(c(-0.5,0),c(0,0.86),c(0.5,0))
+arc.simplexcoord = t(sapply(1:nrow(arc), function(i) arc[i,]$Arc1*coord.V[1,] + arc[i,]$Arc2*coord.V[2,] + arc[i,]$Arc3*coord.V[3,]))
+denshighhypo = TernaryDensity(arc %>% dplyr::select(Arc2,Arc3,Arc1), resolution = 48L, direction = getOption("ternDirection",1L)) 
+
+
+######## Main figure 4f
+denshigh.cols = data.frame(Terminal1 = rep(NA,ncol(denshighhypo)))
+for(i in 1:ncol(denshighhypo)){
+  wtmp = exp( -((arc.simplexcoord[,1]- as.numeric(denshighhypo[1,i]) )**2+(arc.simplexcoord[,2]- as.numeric(denshighhypo[2,i]))**2)/2/0.1**2 ) 
+  denshigh.cols$Terminal1[i] = sum(wtmp*arc$Terminal1,na.rm=T)/sum(wtmp)
+}
+colfunc.bg = colorRampPalette(c("red", "white", "azure4")) #red - blue/green
+num = round( (denshigh.cols$Terminal1-min(denshigh.cols$Terminal1))/(max(denshigh.cols$Terminal1)-min(denshigh.cols$Terminal1))*20 )+4
+num = ifelse(num >= 20, 20, num)
+denshigh.cols$Terminal1.col = rev(colfunc.bg(21))[num]
+denshighhypo[3,] = denshigh.cols$Terminal1.col
+pdf("/github/Figure/Main/Fig4/f_Terminal1.pdf", width = 16, height = 8)
+TernaryPlot(point = "up", 
+            lab.cex = 0.8, grid.minor.lines = 0,
+            grid.lines = 5,
+            lab.offset = 0.18,
+            grid.lty = 'solid', col = rgb(0.9, 0.9, 0.9), grid.col = 'white', 
+            axis.col = rgb(0.6, 0.6, 0.6), ticks.col = rgb(0.6, 0.6, 0.6),
+            axis.rotate = FALSE,
+            padding = 0.12,  axis.labels = F, axis.tick = F)
+ColourTernary(denshighhypo, spectrum = NULL,direction = 1)
+TernaryLines(list(c(0, 255, 0), rep(50,3)), col = 'grey')
+TernaryLines(list(c(0, 0, 255), rep(50,3)), col = 'grey')
+TernaryLines(list(c(255, 0, 0), rep(50,3)), col = 'grey')
+data_points = list("A1" = c(0, 0, 255),"A2" = c(255, 0, 0),"A3" = c(0, 255, 0))
+xy = CoordinatesToXY(data_points)
+points(xy[1, ] + c(-sqrt(0.1**2/2),0,sqrt(0.1**2/2)), xy[2, ]+c(-sqrt(0.1**2/2),0.1,-sqrt(0.1**2/2)), pch = 19, cex = 5, col = alpha(c("red2","dodger blue", "Forestgreen"),0.7))
+text(xy[1, ] + c(-sqrt(0.1**2/2),0,sqrt(0.1**2/2)), xy[2, ]+c(-sqrt(0.1**2/2),0.1,-sqrt(0.1**2/2)), names(data_points), cex = 0.8, font = 2)
+dev.off()
+pdf("/github/Figure/Main/Fig4/f_Terminal1_legned.pdf", width = 16, height = 8)
+l1 = get_legend(ggplot(denshigh.cols, aes(x = Terminal1, y = 1, fill = Terminal1)) + geom_tile(aes(fill = Terminal1), colour = "grey") + 
+                  scale_fill_gradient2(low = "azure4", mid = "white", high = "red", midpoint = mean(denshigh.cols$Terminal1[which(denshigh.cols$Terminal1.col == "#FFFFFF")]), name = "Terminal1 score"))
+plot_grid(l1)
+dev.off()
+
+
+
+denshigh.cols = data.frame(Terminal2 = rep(NA,ncol(denshighhypo)))
+for(i in 1:ncol(denshighhypo)){
+  wtmp = exp( -((arc.simplexcoord[,1]- as.numeric(denshighhypo[1,i]) )**2+(arc.simplexcoord[,2]- as.numeric(denshighhypo[2,i]))**2)/2/0.1**2 ) # compute gaussian kernel
+  denshigh.cols$Terminal2[i] = sum(wtmp*arc$Terminal2,na.rm=T)/sum(wtmp)
+}
+colfunc.bg = colorRampPalette(c("blue", "white", "azure4"))
+num = round( (denshigh.cols$Terminal2-min(denshigh.cols$Terminal2))/(max(denshigh.cols$Terminal2)-min(denshigh.cols$Terminal2))*20 )+4
+num = ifelse(num >= 20, 20, num)
+denshigh.cols$Terminal2.col = rev(colfunc.bg(21))[num]
+denshighhypo[3,] = denshigh.cols$Terminal2.col
+pdf("/github/Figure/Main/Fig4/f_Terminal2.pdf", width = 16, height = 8)
+TernaryPlot(point = "up", 
+            lab.cex = 0.8, grid.minor.lines = 0,
+            grid.lines = 5,
+            lab.offset = 0.18,
+            grid.lty = 'solid', col = rgb(0.9, 0.9, 0.9), grid.col = 'white', 
+            axis.col = rgb(0.6, 0.6, 0.6), ticks.col = rgb(0.6, 0.6, 0.6),
+            axis.rotate = FALSE,
+            padding = 0.12,  axis.labels = F, axis.tick = F)
+ColourTernary(denshighhypo, spectrum = NULL,direction = 1)
+TernaryLines(list(c(0, 255, 0), rep(50,3)), col = 'grey')
+TernaryLines(list(c(0, 0, 255), rep(50,3)), col = 'grey')
+TernaryLines(list(c(255, 0, 0), rep(50,3)), col = 'grey')
+data_points = list("A1" = c(0, 0, 255),"A2" = c(255, 0, 0),"A3" = c(0, 255, 0))
+xy = CoordinatesToXY(data_points)
+points(xy[1, ] + c(-sqrt(0.1**2/2),0,sqrt(0.1**2/2)), xy[2, ]+c(-sqrt(0.1**2/2),0.1,-sqrt(0.1**2/2)), pch = 19, cex = 5, col = alpha(c("red2","dodger blue", "Forestgreen"),0.7))
+text(xy[1, ] + c(-sqrt(0.1**2/2),0,sqrt(0.1**2/2)), xy[2, ]+c(-sqrt(0.1**2/2),0.1,-sqrt(0.1**2/2)), names(data_points), cex = 0.8, font = 2)
+dev.off()
+pdf("/github/Figure/Main/Fig4/f_Terminal2_legned.pdf", width = 16, height = 8)
+l1 = get_legend(ggplot(denshigh.cols, aes(x = Terminal2, y = 1, fill = Terminal2)) + geom_tile(aes(fill = Terminal2), colour = "grey") + 
+                  scale_fill_gradient2(low = "azure4", mid = "white", high = "blue", midpoint = mean(denshigh.cols$Terminal2[which(denshigh.cols$Terminal2.col == "#FFFFFF")]), name = "Terminal2 score"))
+plot_grid(l1)
+dev.off()
+
+
+
+denshigh.cols = data.frame(Terminal3 = rep(NA,ncol(denshighhypo)))
+for(i in 1:ncol(denshighhypo)){
+  wtmp = exp( -((arc.simplexcoord[,1]- as.numeric(denshighhypo[1,i]) )**2+(arc.simplexcoord[,2]- as.numeric(denshighhypo[2,i]))**2)/2/0.1**2 ) 
+  denshigh.cols$Terminal3[i] = sum(wtmp*arc$Terminal3,na.rm=T)/sum(wtmp)
+}
+colfunc.bg = colorRampPalette(c("darkgreen", "white", "azure4")) 
+num = round( (denshigh.cols$Terminal3-min(denshigh.cols$Terminal3))/(max(denshigh.cols$Terminal3)-min(denshigh.cols$Terminal3))*20 )+4
+num = ifelse(num >= 20, 20, num)
+denshigh.cols$Terminal3.col = rev(colfunc.bg(21))[num]
+denshighhypo[3,] = denshigh.cols$Terminal3.col
+pdf("/github/Figure/Main/Fig4/f_Terminal3.pdf", width = 16, height = 8)
+TernaryPlot(point = "up", 
+            lab.cex = 0.8, grid.minor.lines = 0,
+            grid.lines = 5,
+            lab.offset = 0.18,
+            grid.lty = 'solid', col = rgb(0.9, 0.9, 0.9), grid.col = 'white', 
+            axis.col = rgb(0.6, 0.6, 0.6), ticks.col = rgb(0.6, 0.6, 0.6),
+            axis.rotate = FALSE,
+            padding = 0.12,  axis.labels = F, axis.tick = F)
+ColourTernary(denshighhypo, spectrum = NULL,direction = 1)
+TernaryLines(list(c(0, 255, 0), rep(50,3)), col = 'grey')
+TernaryLines(list(c(0, 0, 255), rep(50,3)), col = 'grey')
+TernaryLines(list(c(255, 0, 0), rep(50,3)), col = 'grey')
+data_points = list("A1" = c(0, 0, 255),"A2" = c(255, 0, 0),"A3" = c(0, 255, 0))
+xy = CoordinatesToXY(data_points)
+points(xy[1, ] + c(-sqrt(0.1**2/2),0,sqrt(0.1**2/2)), xy[2, ]+c(-sqrt(0.1**2/2),0.1,-sqrt(0.1**2/2)), pch = 19, cex = 5, col = alpha(c("red2","dodger blue", "Forestgreen"),0.7))
+text(xy[1, ] + c(-sqrt(0.1**2/2),0,sqrt(0.1**2/2)), xy[2, ]+c(-sqrt(0.1**2/2),0.1,-sqrt(0.1**2/2)), names(data_points), cex = 0.8, font = 2)
+dev.off()
+pdf("/github/Figure/Main/Fig4/f_Terminal3_legned.pdf", width = 16, height = 8)
+l1 = get_legend(ggplot(denshigh.cols, aes(x = Terminal3, y = 1, fill = Terminal3)) + geom_tile(aes(fill = Terminal3), colour = "grey") + 
+                  scale_fill_gradient2(low = "azure4", mid = "white", high = "darkgreen", midpoint = mean(denshigh.cols$Terminal3[which(denshigh.cols$Terminal3.col == "#FFFFFF")]), name = "Terminal3 score"))
+plot_grid(l1)
+dev.off()
+
+
+clinic = read.csv('/github/model_data/TCGA/CDA_TCGA_COAD_mRNA_tpm_clinical_info.csv', header = T, row.names = 1)
+total = cbind(test,clinic)
+PFI_cutpoint = maxstat.test(Surv(PFI.time,PFI) ~ Terminal1,data=total,smethod="LogRank",pmethod="condMC",B=999)
+DFI_cutpoint = maxstat.test(Surv(DFI.time,DFI) ~ Terminal1,data=total,smethod="LogRank",pmethod="condMC",B=999)
+PFI_cutpoint = PFI_cutpoint$estimate
+DFI_cutpoint = DFI_cutpoint$estimate
+mydf1 = total
+mydf1$PFI_condition = ifelse(mydf1$Terminal1 <= PFI_cutpoint,'Low','High')
+mydf1$DFI_condition = ifelse(mydf1$Terminal1 <= DFI_cutpoint,'Low','High')
+fit1 = survfit(Surv(PFI.time,PFI)~PFI_condition,data=mydf1)
+fit2 = survfit(Surv(DFI.time,DFI)~DFI_condition,data=mydf1)
+p1 = ggsurvplot(fit1,data = mydf1, pval = T,title = "Terminal1", legend.labs = c("High (n=204)", "Low (n=84)"), palette = c('red','goldenrod1'),risk.table=T,ylab = 'PFI', xlab = 'Time (days)')
+p2 = ggsurvplot(fit2,data = mydf1, pval = T,title = "Terminal1", legend.labs = c("High (n=215)", "Low (n=73)"),palette = c('red','goldenrod1'),risk.table=T,ylab = 'DFI', xlab = 'Time (days)')
+######## Main figure 4g
+pdf("/github/Figure/Main/Fig4/g_Terminal1_surv_plot.pdf", width = 16, height = 8)
+grid.arrange(p1$plot, p2$plot, nrow = 1)
+dev.off()
+
+
+PFI_cutpoint = maxstat.test(Surv(PFI.time,PFI) ~ Terminal2,data=total,smethod="LogRank",pmethod="condMC",B=999)
+DFI_cutpoint = maxstat.test(Surv(DFI.time,DFI) ~ Terminal2,data=total,smethod="LogRank",pmethod="condMC",B=999)
+PFI_cutpoint = PFI_cutpoint$estimate
+DFI_cutpoint = DFI_cutpoint$estimate
+mydf1 = total
+mydf1$PFI_condition = ifelse(mydf1$Terminal2 <= PFI_cutpoint,'Low','High')
+mydf1$DFI_condition = ifelse(mydf1$Terminal2 <= DFI_cutpoint,'Low','High')
+fit1 = survfit(Surv(PFI.time,PFI)~PFI_condition,data=mydf1)
+fit2 = survfit(Surv(DFI.time,DFI)~DFI_condition,data=mydf1)
+p1 = ggsurvplot(fit1,data = mydf1, pval = T,title = "Terminal2", legend.labs = c("High (n=183)", "Low (n=105)"), palette = c('blue','lightblue'),risk.table=T,ylab = 'PFI', xlab = 'Time (days)') 
+p2 = ggsurvplot(fit2,data = mydf1, pval = T,title = "Terminal2", legend.labs = c("High (n=156)", "Low (n=132)"),palette = c('blue','lightblue'),risk.table=T,ylab = 'DFI', xlab = 'Time (days)')
+######## Supple figure 4d
+pdf("/github/Figure/Supple/Fig4/d_Terminal2_surv_plot.pdf", width = 16, height = 8)
+grid.arrange(p1$plot, p2$plot, nrow = 1)
+dev.off()
+
+
+PFI_cutpoint = maxstat.test(Surv(PFI.time,PFI) ~ Terminal3,data=total,smethod="LogRank",pmethod="condMC",B=999)
+DFI_cutpoint = maxstat.test(Surv(DFI.time,DFI) ~ Terminal3,data=total,smethod="LogRank",pmethod="condMC",B=999)
+PFI_cutpoint = PFI_cutpoint$estimate
+DFI_cutpoint = DFI_cutpoint$estimate
+mydf1 = total
+mydf1$PFI_condition = ifelse(mydf1$Terminal3 <= PFI_cutpoint,'Low','High')
+mydf1$DFI_condition = ifelse(mydf1$Terminal3 <= DFI_cutpoint,'Low','High')
+fit1 = survfit(Surv(PFI.time,PFI)~PFI_condition,data=mydf1)
+fit2 = survfit(Surv(DFI.time,DFI)~DFI_condition,data=mydf1)
+p1 = ggsurvplot(fit1,data = mydf1, pval = T,title = "Terminal3", legend.labs = c("High (n=30)", "Low (n=258)"), palette = c('darkgreen','chartreuse'),risk.table=T,ylab = 'PFI', xlab = 'Time (days)') 
+p2 = ggsurvplot(fit2,data = mydf1, pval = T,title = "Terminal3", legend.labs = c("High (n=36)", "Low (n=252)"),palette = c('darkgreen','chartreuse'),risk.table=T,ylab = 'DFI', xlab = 'Time (days)')
+######## Supple figure 4d
+pdf("/github/Figure/Supple/Fig4/d_Terminal3_surv_plot.pdf", width = 16, height = 8)
+grid.arrange(p1$plot, p2$plot, nrow = 1)
+dev.off()

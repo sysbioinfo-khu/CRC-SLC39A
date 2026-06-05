@@ -1,0 +1,21 @@
+CDX2_DS = abs(c(-224.56, -214.23, -209.15,	-204.36, -199.17, -198.22, -198.07, -197.98))
+CDX2_CS = c(0.8163, 0.7832, 0.7655, 0.7479, 0.7278, 0.7240, 0.7234, 0.7230)
+CDX2_LR = c(15.63, 14.67, 30.83, 17.94, 14.42, 12.85, 15.87, 21.57)
+CDX2P_DS = abs(c(-230.91, -226.81, -226.60, -211.66, -209.18, -206.97, -202.62, -199.65))
+CDX2P_CS = c(0.8345, 0.8229, 0.8223, 0.7744, 0.7656, 0.7576, 0.7412, 0.7297)
+CDX2P_LR = c(25.01, 18.91, 26.80, 28.25, 15.78, 18.92, 17.12, 22.91)
+df = data.frame('Score' = c(CDX2_DS,CDX2P_DS,CDX2_CS,CDX2P_CS,CDX2_LR,CDX2P_LR),
+                'Scoretype' = c(rep('Docking score',16),rep('Confidence score',16),rep('Ligand rmsd',16)),
+                'Molecule' = rep(c(rep('CDX2',8),rep('CDX2-P',8)),3),
+                'Model' = factor(rep(paste0('Model',c(1:8)),6),levels = paste0('Model',c(1:8))))
+compare = list( c("CDX2", "CDX2-P"))
+
+
+######## Main figure 2i
+pdf("/github/Figure/Main/Fig2/i_HDOCK_Confidence_score.pdf", width = 8, height = 4)
+ggplot(data = df[which(df$Scoretype == 'Confidence score'),], aes(x = Molecule, y = Score, group = Model)) +
+  geom_line(linetype = "dashed", aes(color = Model), size = 1.2) +
+  stat_compare_means(comparisons = compare,paired = T) +
+  geom_point(aes(color = Model), size=8) + theme_classic() + 
+  xlab("CDX2 type") + ylab('Confidence score') + geom_hline(yintercept = 0.7, linetype = "dashed", color = "red", size = 0.8)
+dev.off()

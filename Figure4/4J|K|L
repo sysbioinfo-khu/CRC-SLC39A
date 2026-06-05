@@ -1,0 +1,760 @@
+library(scHumanNet)
+library(ACTIONet)
+library(SCINET)
+library(Seurat)
+library(igraph)
+library(SingleCellExperiment)
+library(purrr)
+library(dplyr)
+
+
+sc = qread('/github/singlecell_data/ICI/only_Cancer/ICI_processed_data.qs')
+
+
+
+data('HNv3_XC_LLS')
+data = SingleCellExperiment(assays = list(logcounts = sc@assays$RNA$counts), colData = sc@meta.data)
+ace = reduce.ace(data)
+ace[['Labels']] = sc$response
+ace = compute.cluster.feature.specificity(ace, ace$Labels, "celltype_specificity_scores")
+Celltype.specific.networks1 = run.SCINET.clusters(ace, specificity.slot.name = "celltype_specificity_scores_feature_specificity",min.edge.weight = 2.4)
+sorted.net.list1 = SortAddLLS(Celltype.specific.networks1, reference.network = graph.hn3)
+lapply(sorted.net.list1, head)
+sig.hub.df1 = FindAllHub(sorted.net.list1, centrality="degree")
+sig.hub.df1
+
+
+sc@meta.data[which(sc$PFStype == 'low'),'PFStype'] = 'yes'
+sc@meta.data[which(sc$PFStype == 'high'),'PFStype'] = 'no'
+sc2 = subset(sc,PFStype == 'yes' | PFStype == 'no')
+data = SingleCellExperiment(assays = list(logcounts = sc2@assays$RNA$counts), colData = sc2@meta.data)
+ace = reduce.ace(data)
+ace[['Labels']] = sc2$PFStype
+ace = compute.cluster.feature.specificity(ace, ace$Labels, "celltype_specificity_scores")
+Celltype.specific.networks2 = run.SCINET.clusters(ace, specificity.slot.name = "celltype_specificity_scores_feature_specificity",min.edge.weight = 2.4)
+sorted.net.list2 = SortAddLLS(Celltype.specific.networks2, reference.network = graph.hn3)
+lapply(sorted.net.list2, head)
+sig.hub.df2 = FindAllHub(sorted.net.list2, centrality="degree")
+sig.hub.df2
+
+
+Terminal_markers = read.csv('/github/singlecell_data/SG/data/Cancer/Terminal_markers.csv', header = T,row.names = 1)
+T1.genes = Terminal_markers[which(Terminal_markers$cluster == 'Terminal1'),'gene'][1:300]
+T2.genes = Terminal_markers[which(Terminal_markers$cluster == 'Terminal2'),'gene'][1:300]
+T3.genes = Terminal_markers[which(Terminal_markers$cluster == 'Terminal3'),'gene'][1:300]
+del1 = which(T1.genes %in% intersect(T1.genes, T2.genes) | T1.genes %in% intersect(T1.genes, T3.genes))
+del2 = which(T2.genes %in% intersect(T2.genes, T3.genes) | T2.genes %in% intersect(T2.genes, T1.genes))
+del3 = which(T3.genes %in% intersect(T3.genes, T1.genes) | T3.genes %in% intersect(T3.genes, T2.genes))
+T1.genes = T1.genes[-del1]
+T2.genes = T2.genes[-del2]
+
+
+NRnet = sorted.net.list1[['NR']]
+NRnet.genes = unique(c(NRnet[,1],NRnet[,2]))
+T1.genes.NRnet = as.character(T1.genes[T1.genes %in% NRnet.genes])
+T2.genes.NRnet = as.character(T2.genes[T2.genes %in% NRnet.genes])
+T3.genes.NRnet = as.character(T3.genes[T3.genes %in% NRnet.genes])
+NRnetsub2.genes = unique(c(NRnet[, 1], NRnet[, 2]))
+NRnet.sub2 = graph.data.frame(NRnet, directed = F)
+all.genes = data.frame(genes = NRnetsub2.genes)
+all.genes$T1.label = ifelse(all.genes$genes %in% T1.genes.NRnet, 1, 0)
+all.genes$T2.label = ifelse(all.genes$genes %in% T2.genes.NRnet, 1, 0)
+all.genes$T3.label = ifelse(all.genes$genes %in% T3.genes.NRnet, 1, 0)
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T1_NRnet", index = V(NRnet.sub2), as.character(all.genes$T1.label))
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T2_NRnet", index = V(NRnet.sub2), as.character(all.genes$T2.label))
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T3_NRnet", index = V(NRnet.sub2), as.character(all.genes$T3.label))
+V(NRnet.sub2)$color = ifelse(V(NRnet.sub2)$name == "CDX2" | V(NRnet.sub2)$name == "CD24" |
+                               V(NRnet.sub2)$name == "SLC39A1" | V(NRnet.sub2)$name == "SLC39A2" | V(NRnet.sub2)$name == "SLC39A3" |
+                               V(NRnet.sub2)$name == "SLC39A4" | V(NRnet.sub2)$name == "SLC39A5" | V(NRnet.sub2)$name == "SLC39A6" |
+                               V(NRnet.sub2)$name == "SLC39A8" | V(NRnet.sub2)$name == "SLC39A10" | V(NRnet.sub2)$name == "SLC39A14", "red",
+                             ifelse(V(NRnet.sub2)$T1_NRnet == '1', "coral", 
+                                    ifelse(V(NRnet.sub2)$T2_NRnet == '1', "steelblue",
+                                           ifelse(V(NRnet.sub2)$T3_NRnet == '1', "darkseagreen","grey90")))) 
+legend_cats = data.frame(attr = c("Terminal1", "Terminal2", "Terminal3", 'SLC39/CDX2/CD24', 'Other genes'),
+                         color = c("coral", "steelblue", "darkseagreen", 'red', 'grey90'))
+node_degree = igraph::degree(NRnet.sub2, mode = "all")  
+scale_factor = 0.05  
+V(NRnet.sub2)$size[which(V(NRnet.sub2)$color == 'grey90')] = 4 + (node_degree[which(V(NRnet.sub2)$color == 'grey90')] * scale_factor)
+V(NRnet.sub2)$size[which(V(NRnet.sub2)$color != 'grey90')] = 8 + (node_degree[which(V(NRnet.sub2)$color != 'grey90')] * scale_factor)
+fixed_label_size = 0.5 
+V(NRnet.sub2)$label.cex = fixed_label_size
+NR_graph = NRnet.sub2
+layout = layout_with_fr(NRnet.sub2,niter = 10000)
+######## Main figure 4j
+pdf("/github/Figure/Main/Fig4/j_ICI_NR_network.pdf", width = 16, height = 8)
+plot.igraph(NRnet.sub2, layout = layout, asp = 0, main = "NR Network with Terminal",
+            vertex.frame.color = "white",
+            vertex.shape = "circle",
+            vertex.label.color = "black",
+            vertex.label.family = "Times",
+            vertex.label.font = 0.01,
+            vertex.label.cex = 0.01,  
+            edge.arrow.size = 0.1)
+legend(x = "bottomleft",
+       legend = legend_cats$attr,
+       pch = 19,
+       col = legend_cats$color,
+       bty = "n",
+       title = "Genes in Network")
+dev.off()
+
+
+
+Rnet = sorted.net.list1[['R']]
+Rnet.genes = unique(c(Rnet[,1],Rnet[,2]))
+T1.genes.Rnet = as.character(T1.genes[T1.genes %in% Rnet.genes])
+T2.genes.Rnet = as.character(T2.genes[T2.genes %in% Rnet.genes])
+T3.genes.Rnet = as.character(T3.genes[T3.genes %in% Rnet.genes])
+Rnetsub2.genes = unique(c(Rnet[, 1], Rnet[, 2]))
+Rnet.sub2 = graph.data.frame(Rnet, directed = F)
+all.genes = data.frame(genes = Rnetsub2.genes)
+all.genes$T1.label = ifelse(all.genes$genes %in% T1.genes.Rnet, 1, 0)
+all.genes$T2.label = ifelse(all.genes$genes %in% T2.genes.Rnet, 1, 0)
+all.genes$T3.label = ifelse(all.genes$genes %in% T3.genes.Rnet, 1, 0)
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T1_Rnet", index = V(Rnet.sub2), as.character(all.genes$T1.label))
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T2_Rnet", index = V(Rnet.sub2), as.character(all.genes$T2.label))
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T3_Rnet", index = V(Rnet.sub2), as.character(all.genes$T3.label))
+V(Rnet.sub2)$color = ifelse(V(Rnet.sub2)$name == "CDX2" | V(Rnet.sub2)$name == "CD24" | 
+                              V(Rnet.sub2)$name == "SLC39A1" | V(Rnet.sub2)$name == "SLC39A2" | V(Rnet.sub2)$name == "SLC39A3" |
+                              V(Rnet.sub2)$name == "SLC39A4" | V(Rnet.sub2)$name == "SLC39A5" | V(Rnet.sub2)$name == "SLC39A6" |
+                              V(Rnet.sub2)$name == "SLC39A8" | V(Rnet.sub2)$name == "SLC39A10" | V(Rnet.sub2)$name == "SLC39A14", "red",
+                            ifelse(V(Rnet.sub2)$T1_Rnet == '1', "coral", 
+                                   ifelse(V(Rnet.sub2)$T2_Rnet == '1', "steelblue",
+                                          ifelse(V(Rnet.sub2)$T3_Rnet == '1', "darkseagreen","grey90")))) 
+
+
+legend_cats = data.frame(attr = c("Terminal1", "Terminal2", "Terminal3", 'SLC39/CDX2/CD24', 'Other genes'),
+                         color = c("coral", "steelblue", "darkseagreen", 'red', 'grey90'))
+node_degree = igraph::degree(Rnet.sub2, mode = "all")  # mode = "all" counts all connections
+scale_factor = 0.05  
+V(Rnet.sub2)$size[which(V(Rnet.sub2)$color == 'grey90')] = 4 + (node_degree[which(V(Rnet.sub2)$color == 'grey90')] * scale_factor)
+V(Rnet.sub2)$size[which(V(Rnet.sub2)$color != 'grey90')] = 8 + (node_degree[which(V(Rnet.sub2)$color != 'grey90')] * scale_factor)
+fixed_label_size = 0.5 
+V(Rnet.sub2)$label.cex = fixed_label_size
+R_graph = Rnet.sub2
+layout = layout_with_fr(Rnet.sub2,niter = 10000)
+######## Main figure 4j
+pdf("/github/Figure/Main/Fig4/j_ICI_R_network.pdf", width = 16, height = 8)
+plot.igraph(Rnet.sub2, layout = layout, asp = 0, main = "R Network with Terminal",
+            vertex.frame.color = "white",
+            vertex.shape = "circle",
+            vertex.label.color = "black",
+            vertex.label.family = "Times",
+            vertex.label.font = 0.01,
+            vertex.label.cex = 0.01, 
+            edge.arrow.size = 0.1 
+)
+
+legend(x = "bottomleft",
+       legend = legend_cats$attr,
+       pch = 19,
+       col = legend_cats$color,
+       bty = "n",
+       title = "Genes in Network")
+dev.off()
+
+
+
+NRnet = sorted.net.list2[['yes']]
+NRnet.genes = unique(c(NRnet[,1],NRnet[,2]))
+T1.genes.NRnet = as.character(T1.genes[T1.genes %in% NRnet.genes])
+T2.genes.NRnet = as.character(T2.genes[T2.genes %in% NRnet.genes])
+T3.genes.NRnet = as.character(T3.genes[T3.genes %in% NRnet.genes])
+NRnetsub2.genes = unique(c(NRnet[, 1], NRnet[, 2]))
+NRnet.sub2 = graph.data.frame(NRnet, directed = F)
+all.genes = data.frame(genes = NRnetsub2.genes)
+all.genes$T1.label = ifelse(all.genes$genes %in% T1.genes.NRnet, 1, 0)
+all.genes$T2.label = ifelse(all.genes$genes %in% T2.genes.NRnet, 1, 0)
+all.genes$T3.label = ifelse(all.genes$genes %in% T3.genes.NRnet, 1, 0)
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T1_NRnet", index = V(NRnet.sub2), as.character(all.genes$T1.label))
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T2_NRnet", index = V(NRnet.sub2), as.character(all.genes$T2.label))
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T3_NRnet", index = V(NRnet.sub2), as.character(all.genes$T3.label))
+V(NRnet.sub2)$color = ifelse(V(NRnet.sub2)$name == "CDX2" | V(NRnet.sub2)$name == "CD24" | 
+                               V(NRnet.sub2)$name == "SLC39A1" | V(NRnet.sub2)$name == "SLC39A2" | V(NRnet.sub2)$name == "SLC39A3" |
+                               V(NRnet.sub2)$name == "SLC39A4" | V(NRnet.sub2)$name == "SLC39A5" | V(NRnet.sub2)$name == "SLC39A6" |
+                               V(NRnet.sub2)$name == "SLC39A8" | V(NRnet.sub2)$name == "SLC39A10" | V(NRnet.sub2)$name == "SLC39A14", "red",
+                             ifelse(V(NRnet.sub2)$T1_NRnet == '1', "coral", 
+                                    ifelse(V(NRnet.sub2)$T2_NRnet == '1', "steelblue",
+                                           ifelse(V(NRnet.sub2)$T3_NRnet == '1', "darkseagreen","grey90")))) 
+legend_cats = data.frame(attr = c("Terminal1", "Terminal2", "Terminal3", 'SLC39/CDX2/CD24', 'Other genes'),
+                         color = c("coral", "steelblue", "darkseagreen", 'red', 'grey90'))
+node_degree = igraph::degree(NRnet.sub2, mode = "all")  
+scale_factor = 0.05 
+V(NRnet.sub2)$size[which(V(NRnet.sub2)$color == 'grey90')] = 4 + (node_degree[which(V(NRnet.sub2)$color == 'grey90')] * scale_factor)
+V(NRnet.sub2)$size[which(V(NRnet.sub2)$color != 'grey90')] = 8 + (node_degree[which(V(NRnet.sub2)$color != 'grey90')] * scale_factor)
+fixed_label_size = 0.5 
+V(NRnet.sub2)$label.cex = fixed_label_size
+PFSlow_graph = NRnet.sub2
+layout = layout_with_fr(NRnet.sub2,niter = 10000)
+######## Main figure 4k
+pdf("/github/Figure/Main/Fig4/k_ICI_PFS_low_network.pdf", width = 16, height = 8)
+plot.igraph(NRnet.sub2, layout = layout, asp = 0, main = "PFS<6 Network with Terminal",
+            vertex.frame.color = "white",
+            vertex.shape = "circle",
+            vertex.label.color = "black",
+            vertex.label.family = "Times",
+            vertex.label.font = 0.01,
+            vertex.label.cex = 0.01,  
+            edge.arrow.size = 0.1)
+legend(x = "bottomleft",
+       legend = legend_cats$attr,
+       pch = 19,
+       col = legend_cats$color,
+       bty = "n",
+       title = "Genes in Network")
+dev.off()
+
+
+
+
+Rnet = sorted.net.list2[['no']]
+Rnet.genes = unique(c(Rnet[,1],Rnet[,2]))
+T1.genes.Rnet = as.character(T1.genes[T1.genes %in% Rnet.genes])
+T2.genes.Rnet = as.character(T2.genes[T2.genes %in% Rnet.genes])
+T3.genes.Rnet = as.character(T3.genes[T3.genes %in% Rnet.genes])
+Rnetsub2.genes = unique(c(Rnet[, 1], Rnet[, 2]))
+Rnet.sub2 = graph.data.frame(Rnet, directed = F)
+all.genes = data.frame(genes = Rnetsub2.genes)
+all.genes$T1.label = ifelse(all.genes$genes %in% T1.genes.Rnet, 1, 0)
+all.genes$T2.label = ifelse(all.genes$genes %in% T2.genes.Rnet, 1, 0)
+all.genes$T3.label = ifelse(all.genes$genes %in% T3.genes.Rnet, 1, 0)
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T1_Rnet", index = V(Rnet.sub2), as.character(all.genes$T1.label))
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T2_Rnet", index = V(Rnet.sub2), as.character(all.genes$T2.label))
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T3_Rnet", index = V(Rnet.sub2), as.character(all.genes$T3.label))
+V(Rnet.sub2)$color = ifelse(V(Rnet.sub2)$name == "CDX2" | V(Rnet.sub2)$name == "CD24" | 
+                              V(Rnet.sub2)$name == "SLC39A1" | V(Rnet.sub2)$name == "SLC39A2" | V(Rnet.sub2)$name == "SLC39A3" |
+                              V(Rnet.sub2)$name == "SLC39A4" | V(Rnet.sub2)$name == "SLC39A5" | V(Rnet.sub2)$name == "SLC39A6" |
+                              V(Rnet.sub2)$name == "SLC39A8" | V(Rnet.sub2)$name == "SLC39A10" | V(Rnet.sub2)$name == "SLC39A14", "red",
+                            ifelse(V(Rnet.sub2)$T1_Rnet == '1', "coral", 
+                                   ifelse(V(Rnet.sub2)$T2_Rnet == '1', "steelblue",
+                                          ifelse(V(Rnet.sub2)$T3_Rnet == '1', "darkseagreen","grey90")))) 
+legend_cats = data.frame(attr = c("Terminal1", "Terminal2", "Terminal3", 'SLC39/CDX2/CD24', 'Other genes'),
+                         color = c("coral", "steelblue", "darkseagreen", 'red', 'grey90'))
+node_degree = igraph::degree(Rnet.sub2, mode = "all") 
+scale_factor = 0.05  
+V(Rnet.sub2)$size[which(V(Rnet.sub2)$color == 'grey90')] = 4 + (node_degree[which(V(Rnet.sub2)$color == 'grey90')] * scale_factor)
+V(Rnet.sub2)$size[which(V(Rnet.sub2)$color != 'grey90')] = 8 + (node_degree[which(V(Rnet.sub2)$color != 'grey90')] * scale_factor)
+fixed_label_size = 0.5  
+V(Rnet.sub2)$label.cex = fixed_label_size
+PFShigh_graph = Rnet.sub2
+layout = layout_with_fr(Rnet.sub2,niter = 10000)
+
+######## Main figure 4k
+pdf("/github/Figure/Main/Fig4/k_ICI_PFS_high_network.pdf", width = 16, height = 8)
+plot.igraph(Rnet.sub2, layout = layout, asp = 0, main = "PFS>6 Network with Terminal",
+            vertex.frame.color = "white",
+            vertex.shape = "circle",
+            vertex.label.color = "black",
+            vertex.label.family = "Times",
+            vertex.label.font = 0.01,
+            vertex.label.cex = 0.01,  
+            edge.arrow.size = 0.1 
+)
+legend(x = "bottomleft",
+       legend = legend_cats$attr,
+       pch = 19,
+       col = legend_cats$color,
+       bty = "n",
+       title = "Genes in Network")
+dev.off()
+
+
+
+sig.list = list()
+sig.list[[1]] = T1.genes
+sig.list[[2]] = T2.genes
+sig.list[[3]] = T3.genes
+names(sig.list) = c('T1', 'T2', 'T3')
+sig.connectivity1 = DeconvoluteNet(network = sorted.net.list1, geneset = sig.list)
+connectivity.sum1 = with(sig.connectivity1,tapply(connectivity.normalized,signature_name,FUN=sum))
+sig.connectivity1$scHumanNet = factor(sig.connectivity1$scHumanNet, levels = c("NR", "R"))
+sig.connectivity2 = DeconvoluteNet(network = sorted.net.list2, geneset = sig.list)
+connectivity.sum2 = with(sig.connectivity2,tapply(connectivity.normalized,signature_name,FUN=sum))
+sig.connectivity2$scHumanNet = factor(sig.connectivity2$scHumanNet, levels = c("yes", "no"))
+######## Main figure 4L
+pdf("/github/Figure/Main/Fig4/l_Connect.pdf.pdf", width = 12, height = 4)
+ggplot(sig.connectivity1, aes(signature_name, connectivity.normalized, color = scHumanNet)) +
+  geom_point() + 
+  geom_line(aes(group = scHumanNet),data = sig.connectivity1) +
+  scale_color_manual(values = c("cyan3", "grey")) +
+  theme(legend.position = "top") +  labs(y="Connectivity") + theme_classic()  +
+  ggplot(sig.connectivity2, aes(signature_name, connectivity.normalized, color = scHumanNet)) +
+  geom_point() + 
+  geom_line(aes(group = scHumanNet),data = sig.connectivity2) +
+  scale_color_manual(values = c("purple", "grey")) +
+  theme(legend.position = "top") +  labs(y="Connectivity", color = 'PFS<6') + theme_classic()
+dev.off()
+
+
+NR_degree = igraph::degree(NR_graph, normalized = T)
+NR_eigen = evcent(NR_graph)$vector
+R_degree = igraph::degree(R_graph, normalized = T)
+R_eigen = evcent(R_graph)$vector
+PFSlow_degree = igraph::degree(PFSlow_graph, normalized = T)
+PFSlow_eigen = evcent(PFSlow_graph)$vector
+PFShigh_degree = igraph::degree(PFShigh_graph, normalized = T)
+PFShigh_eigen = evcent(PFShigh_graph)$vector
+resp_degree = data.frame(c(NR_degree[which(V(NR_graph)$T1_NRnet == '1')],R_degree[which(V(R_graph)$T1_Rnet == '1')],
+                           NR_degree[which(V(NR_graph)$T2_NRnet == '1')],R_degree[which(V(R_graph)$T2_Rnet == '1')],
+                           NR_degree[which(V(NR_graph)$T3_NRnet == '1')],R_degree[which(V(R_graph)$T3_Rnet == '1')]),
+                         c(rep('NR',33),rep('R',11), rep('NR',33),rep('R',58), rep('NR',27),rep('R',38)),
+                         c(rep('T1',44), rep('T2',91), rep('T3',65)))
+rownames(resp_degree) = NULL
+colnames(resp_degree) = c('Degree','Response','Terminal')
+resp_degree$Response = factor(resp_degree$Response, levels = c("R", "NR"))
+resp_degree.summary = resp_degree %>% group_by(Response, Terminal) %>% dplyr::summarise(sd = sd(Degree), Degree = mean(Degree))
+PFS_degree = data.frame(c(PFSlow_degree[which(V(PFSlow_graph)$T1_NRnet == '1')],PFShigh_degree[which(V(PFShigh_graph)$T1_Rnet == '1')],
+                          PFSlow_degree[which(V(PFSlow_graph)$T2_NRnet == '1')],PFShigh_degree[which(V(PFShigh_graph)$T2_Rnet == '1')],
+                          PFSlow_degree[which(V(PFSlow_graph)$T3_NRnet == '1')],PFShigh_degree[which(V(PFShigh_graph)$T3_Rnet == '1')]),
+                        c(rep('yes',26),rep('no',14), rep('yes',26),rep('no',43), rep('yes',33),rep('no',39)),
+                        c(rep('T1',40), rep('T2',69), rep('T3',72)))
+rownames(PFS_degree) = NULL
+colnames(PFS_degree) = c('Degree','PFS','Terminal')
+PFS_degree$PFS = factor(PFS_degree$PFS, levels = c("no", "yes"))
+PFS_degree.summary = PFS_degree %>% group_by(PFS, Terminal) %>% dplyr::summarise(sd = sd(Degree), Degree = mean(Degree))
+resp_eigen = data.frame(c(NR_eigen[which(V(NR_graph)$T1_NRnet == '1')],R_eigen[which(V(R_graph)$T1_Rnet == '1')],
+                          NR_eigen[which(V(NR_graph)$T2_NRnet == '1')],R_eigen[which(V(R_graph)$T2_Rnet == '1')],
+                          NR_eigen[which(V(NR_graph)$T3_NRnet == '1')],R_eigen[which(V(R_graph)$T3_Rnet == '1')]),
+                        c(rep('NR',33),rep('R',11), rep('NR',33),rep('R',58), rep('NR',27),rep('R',38)),
+                        c(rep('T1',44), rep('T2',91), rep('T3',65)))
+rownames(resp_eigen) = NULL
+colnames(resp_eigen) = c('eigen','Response','Terminal')
+resp_eigen$Response = factor(resp_eigen$Response, levels = c("R", "NR"))
+resp_eigen.summary = resp_eigen %>% group_by(Response, Terminal) %>% dplyr::summarise(sd = sd(eigen), eigen = mean(eigen))
+PFS_eigen = data.frame(c(PFSlow_eigen[which(V(PFSlow_graph)$T1_NRnet == '1')],PFShigh_eigen[which(V(PFShigh_graph)$T1_Rnet == '1')],
+                         PFSlow_eigen[which(V(PFSlow_graph)$T2_NRnet == '1')],PFShigh_eigen[which(V(PFShigh_graph)$T2_Rnet == '1')],
+                         PFSlow_eigen[which(V(PFSlow_graph)$T3_NRnet == '1')],PFShigh_eigen[which(V(PFShigh_graph)$T3_Rnet == '1')]),
+                       c(rep('yes',26),rep('no',14), rep('yes',26),rep('no',43), rep('yes',33),rep('no',39)),
+                       c(rep('T1',40), rep('T2',69), rep('T3',72)))
+rownames(PFS_eigen) = NULL
+colnames(PFS_eigen) = c('eigen','PFS','Terminal')
+PFS_eigen$PFS = factor(PFS_eigen$PFS, levels = c("no", "yes"))
+PFS_eigen.summary = PFS_eigen %>% group_by(PFS, Terminal) %>% dplyr::summarise(sd = sd(eigen), eigen = mean(eigen))
+
+######## Main figure 4L
+pdf("/github/Figure/Main/Fig4/l_Degree.pdf", width = 12, height = 4)
+ggplot(resp_degree.summary, aes(Terminal, Degree, color = Response)) +
+  geom_point() + 
+  geom_line(aes(group = Response),data = resp_degree.summary) +
+  scale_color_manual(values = c("grey", "cyan3")) +
+  theme(legend.position = "top") +  labs(y="Degree Centrality") + theme_classic()  +
+  ggplot(PFS_degree.summary, aes(Terminal, Degree, color = PFS)) +
+  geom_point() + 
+  geom_line(aes(group = PFS),data = PFS_degree.summary) +
+  scale_color_manual(values = c("grey", "purple")) +
+  theme(legend.position = "top") +  labs(y="Degree Centrality", color = 'PFS<6') + theme_classic()
+dev.off()
+######## Main figure 4L
+pdf("/github/Figure/Main/Fig4/l_Eigen.pdf", width = 12, height = 4)
+ggplot(resp_eigen.summary, aes(Terminal, eigen, color = Response)) +
+  geom_point() + 
+  geom_line(aes(group = Response),data = resp_eigen.summary) +
+  scale_color_manual(values = c("grey", "cyan3")) +
+  theme(legend.position = "top") +  labs(y="Eigen Centrality") + theme_classic()  +
+  ggplot(PFS_eigen.summary, aes(Terminal, eigen, color = PFS)) +
+  geom_point() + 
+  geom_line(aes(group = PFS),data = PFS_eigen.summary) +
+  scale_color_manual(values = c("grey", "purple")) +
+  theme(legend.position = "top") +  labs(y="Eigen Centrality", color = 'PFS<6') + theme_classic() 
+dev.off()
+
+
+NR_pr = page.rank(NR_graph)$vector
+R_pr = page.rank(R_graph)$vector
+PFSlow_pr = page.rank(PFSlow_graph)$vector
+PFShigh_pr = page.rank(PFShigh_graph)$vector
+resp_pr = data.frame(c(NR_pr[which(V(NR_graph)$T1_NRnet == '1')],R_pr[which(V(R_graph)$T1_Rnet == '1')],
+                       NR_pr[which(V(NR_graph)$T2_NRnet == '1')],R_pr[which(V(R_graph)$T2_Rnet == '1')],
+                       NR_pr[which(V(NR_graph)$T3_NRnet == '1')],R_pr[which(V(R_graph)$T3_Rnet == '1')]),
+                     c(rep('NR',33),rep('R',11), rep('NR',33),rep('R',58), rep('NR',27),rep('R',38)),
+                     c(rep('T1',44), rep('T2',91), rep('T3',65)))
+rownames(resp_pr) = NULL
+colnames(resp_pr) = c('PageRank','Response','Terminal')
+resp_pr$Response = factor(resp_pr$Response, levels = c("R", "NR"))
+resp_pr.summary = resp_pr %>% group_by(Response, Terminal) %>% dplyr::summarise(sd = sd(PageRank), PageRank = mean(PageRank))
+PFS_pr = data.frame(c(PFSlow_pr[which(V(PFSlow_graph)$T1_NRnet == '1')],PFShigh_pr[which(V(PFShigh_graph)$T1_Rnet == '1')],
+                      PFSlow_pr[which(V(PFSlow_graph)$T2_NRnet == '1')],PFShigh_pr[which(V(PFShigh_graph)$T2_Rnet == '1')],
+                      PFSlow_pr[which(V(PFSlow_graph)$T3_NRnet == '1')],PFShigh_pr[which(V(PFShigh_graph)$T3_Rnet == '1')]),
+                    c(rep('yes',26),rep('no',14), rep('yes',26),rep('no',43), rep('yes',33),rep('no',39)),
+                    c(rep('T1',40), rep('T2',69), rep('T3',72)))
+rownames(PFS_pr) = NULL
+colnames(PFS_pr) = c('PageRank','PFS','Terminal')
+PFS_pr$PFS = factor(PFS_pr$PFS, levels = c("no", "yes"))
+PFS_pr.summary = PFS_pr %>% group_by(PFS, Terminal) %>% dplyr::summarise(sd = sd(PageRank), PageRank = mean(PageRank))
+######## Main figure 4L
+pdf("/github/Figure/Main/Fig4/l_PR.pdf", width = 12, height = 4)
+ggplot(resp_pr.summary, aes(Terminal, PageRank, color = Response)) +
+  geom_point() + 
+  geom_line(aes(group = Response),data = resp_pr.summary) +
+  scale_color_manual(values = c("grey", "cyan3")) +
+  theme(legend.position = "top") +  labs(y="Page Rank") + theme_classic()  +
+  ggplot(PFS_pr.summary, aes(Terminal, PageRank, color = PFS)) +
+  geom_point() + 
+  geom_line(aes(group = PFS),data = PFS_pr.summary) +
+  scale_color_manual(values = c("grey", "purple")) +
+  theme(legend.position = "top") +  labs(y="Page Rank", color = 'PFS<6') + theme_classic()
+dev.off()
+
+
+
+
+
+
+
+##############################################################################################################################
+Terminal_markers = read.csv('/github/singlecell_data/SG/data/Cancer/Terminal_markers.csv', header = T,row.names = 1)
+T1.genes = Terminal_markers[which(Terminal_markers$cluster == 'Terminal1'),'gene'][1:200]
+T2.genes = Terminal_markers[which(Terminal_markers$cluster == 'Terminal2'),'gene'][1:200]
+T3.genes = Terminal_markers[which(Terminal_markers$cluster == 'Terminal3'),'gene'][1:200]
+del1 = which(T1.genes %in% intersect(T1.genes, T2.genes) | T1.genes %in% intersect(T1.genes, T3.genes))
+del2 = which(T2.genes %in% intersect(T2.genes, T3.genes) | T2.genes %in% intersect(T2.genes, T1.genes))
+del3 = which(T3.genes %in% intersect(T3.genes, T1.genes) | T3.genes %in% intersect(T3.genes, T2.genes))
+T1.genes = T1.genes[-del1]
+T2.genes = T2.genes[-del2]
+
+
+NRnet = sorted.net.list1[['NR']]
+NRnet.genes = unique(c(NRnet[,1],NRnet[,2]))
+T1.genes.NRnet = as.character(T1.genes[T1.genes %in% NRnet.genes])
+T2.genes.NRnet = as.character(T2.genes[T2.genes %in% NRnet.genes])
+T3.genes.NRnet = as.character(T3.genes[T3.genes %in% NRnet.genes])
+NRnetsub2.genes = unique(c(NRnet[, 1], NRnet[, 2]))
+NRnet.sub2 = graph.data.frame(NRnet, directed = F)
+all.genes = data.frame(genes = NRnetsub2.genes)
+all.genes$T1.label = ifelse(all.genes$genes %in% T1.genes.NRnet, 1, 0)
+all.genes$T2.label = ifelse(all.genes$genes %in% T2.genes.NRnet, 1, 0)
+all.genes$T3.label = ifelse(all.genes$genes %in% T3.genes.NRnet, 1, 0)
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T1_NRnet", index = V(NRnet.sub2), as.character(all.genes$T1.label))
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T2_NRnet", index = V(NRnet.sub2), as.character(all.genes$T2.label))
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T3_NRnet", index = V(NRnet.sub2), as.character(all.genes$T3.label))
+V(NRnet.sub2)$color = ifelse(V(NRnet.sub2)$name == "CDX2" | V(NRnet.sub2)$name == "CD24" | 
+                               V(NRnet.sub2)$name == "SLC39A1" | V(NRnet.sub2)$name == "SLC39A2" | V(NRnet.sub2)$name == "SLC39A3" |
+                               V(NRnet.sub2)$name == "SLC39A4" | V(NRnet.sub2)$name == "SLC39A5" | V(NRnet.sub2)$name == "SLC39A6" |
+                               V(NRnet.sub2)$name == "SLC39A8" | V(NRnet.sub2)$name == "SLC39A10" | V(NRnet.sub2)$name == "SLC39A14", "red",
+                             ifelse(V(NRnet.sub2)$T1_NRnet == '1', "coral", 
+                                    ifelse(V(NRnet.sub2)$T2_NRnet == '1', "steelblue",
+                                           ifelse(V(NRnet.sub2)$T3_NRnet == '1', "darkseagreen","grey90")))) 
+legend_cats = data.frame(attr = c("Terminal1", "Terminal2", "Terminal3", 'SLC39/CDX2/CD24', 'Other genes'),
+                         color = c("coral", "steelblue", "darkseagreen", 'red', 'grey90'))
+node_degree = igraph::degree(NRnet.sub2, mode = "all")  
+scale_factor = 0.05  
+V(NRnet.sub2)$size[which(V(NRnet.sub2)$color == 'grey90')] = 4 + (node_degree[which(V(NRnet.sub2)$color == 'grey90')] * scale_factor)
+V(NRnet.sub2)$size[which(V(NRnet.sub2)$color != 'grey90')] = 8 + (node_degree[which(V(NRnet.sub2)$color != 'grey90')] * scale_factor)
+fixed_label_size = 0.5
+V(NRnet.sub2)$label.cex = fixed_label_size
+NR_graph = NRnet.sub2
+layout = layout_with_fr(NRnet.sub2,niter = 10000)
+######## Supple figure 4E
+pdf("/github/Figure/Supple/Fig4/e_ICI_NR_network.pdf", width = 16, height = 8)
+plot.igraph(NRnet.sub2, layout = layout, asp = 0, main = "NR Network with Terminal",
+            vertex.frame.color = "white",
+            vertex.shape = "circle",
+            vertex.label.color = "black",
+            vertex.label.family = "Times",
+            vertex.label.font = 0.01,
+            vertex.label.cex = 0.01, 
+            edge.arrow.size = 0.1)
+legend(x = "bottomleft",
+       legend = legend_cats$attr,
+       pch = 19,
+       col = legend_cats$color,
+       bty = "n",
+       title = "Genes in Network")
+dev.off()
+
+
+
+Rnet = sorted.net.list1[['R']]
+Rnet.genes = unique(c(Rnet[,1],Rnet[,2]))
+T1.genes.Rnet = as.character(T1.genes[T1.genes %in% Rnet.genes])
+T2.genes.Rnet = as.character(T2.genes[T2.genes %in% Rnet.genes])
+T3.genes.Rnet = as.character(T3.genes[T3.genes %in% Rnet.genes])
+Rnetsub2.genes = unique(c(Rnet[, 1], Rnet[, 2]))
+Rnet.sub2 = graph.data.frame(Rnet, directed = F)
+all.genes = data.frame(genes = Rnetsub2.genes)
+all.genes$T1.label = ifelse(all.genes$genes %in% T1.genes.Rnet, 1, 0)
+all.genes$T2.label = ifelse(all.genes$genes %in% T2.genes.Rnet, 1, 0)
+all.genes$T3.label = ifelse(all.genes$genes %in% T3.genes.Rnet, 1, 0)
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T1_Rnet", index = V(Rnet.sub2), as.character(all.genes$T1.label))
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T2_Rnet", index = V(Rnet.sub2), as.character(all.genes$T2.label))
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T3_Rnet", index = V(Rnet.sub2), as.character(all.genes$T3.label))
+V(Rnet.sub2)$color = ifelse(V(Rnet.sub2)$name == "CDX2" |V(Rnet.sub2)$name == "CD24" | 
+                              V(Rnet.sub2)$name == "SLC39A1" | V(Rnet.sub2)$name == "SLC39A2" | V(Rnet.sub2)$name == "SLC39A3" |
+                              V(Rnet.sub2)$name == "SLC39A4" | V(Rnet.sub2)$name == "SLC39A5" | V(Rnet.sub2)$name == "SLC39A6" |
+                              V(Rnet.sub2)$name == "SLC39A8" | V(Rnet.sub2)$name == "SLC39A10" | V(Rnet.sub2)$name == "SLC39A14", "red",
+                            ifelse(V(Rnet.sub2)$T1_Rnet == '1', "coral", 
+                                   ifelse(V(Rnet.sub2)$T2_Rnet == '1', "steelblue",
+                                          ifelse(V(Rnet.sub2)$T3_Rnet == '1', "darkseagreen","grey90")))) 
+legend_cats = data.frame(attr = c("Terminal1", "Terminal2", "Terminal3", 'SLC39/CDX2/CD24', 'Other genes'),
+                         color = c("coral", "steelblue", "darkseagreen", 'red', 'grey90'))
+node_degree = igraph::degree(Rnet.sub2, mode = "all")  
+scale_factor = 0.05  
+V(Rnet.sub2)$size[which(V(Rnet.sub2)$color == 'grey90')] = 4 + (node_degree[which(V(Rnet.sub2)$color == 'grey90')] * scale_factor)
+V(Rnet.sub2)$size[which(V(Rnet.sub2)$color != 'grey90')] = 8 + (node_degree[which(V(Rnet.sub2)$color != 'grey90')] * scale_factor)
+fixed_label_size = 0.5 
+V(Rnet.sub2)$label.cex = fixed_label_size
+R_graph = Rnet.sub2
+layout = layout_with_fr(Rnet.sub2,niter = 10000)
+######## Supple figure 4E
+pdf("/github/Figure/Supple/Fig4/e_ICI_R_network.pdf", width = 16, height = 8)
+plot.igraph(Rnet.sub2, layout = layout, asp = 0, main = "R Network with Terminal",
+            vertex.frame.color = "white",
+            vertex.shape = "circle",
+            vertex.label.color = "black",
+            vertex.label.family = "Times",
+            vertex.label.font = 0.01,
+            vertex.label.cex = 0.01,  
+            edge.arrow.size = 0.1 
+)
+legend(x = "bottomleft",
+       legend = legend_cats$attr,
+       pch = 19,
+       col = legend_cats$color,
+       bty = "n",
+       title = "Genes in Network")
+dev.off()
+
+
+
+
+NRnet = sorted.net.list2[['yes']]
+NRnet.genes = unique(c(NRnet[,1],NRnet[,2]))
+T1.genes.NRnet = as.character(T1.genes[T1.genes %in% NRnet.genes])
+T2.genes.NRnet = as.character(T2.genes[T2.genes %in% NRnet.genes])
+T3.genes.NRnet = as.character(T3.genes[T3.genes %in% NRnet.genes])
+NRnetsub2.genes = unique(c(NRnet[, 1], NRnet[, 2]))
+NRnet.sub2 = graph.data.frame(NRnet, directed = F)
+all.genes = data.frame(genes = NRnetsub2.genes)
+all.genes$T1.label = ifelse(all.genes$genes %in% T1.genes.NRnet, 1, 0)
+all.genes$T2.label = ifelse(all.genes$genes %in% T2.genes.NRnet, 1, 0)
+all.genes$T3.label = ifelse(all.genes$genes %in% T3.genes.NRnet, 1, 0)
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T1_NRnet", index = V(NRnet.sub2), as.character(all.genes$T1.label))
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T2_NRnet", index = V(NRnet.sub2), as.character(all.genes$T2.label))
+NRnet.sub2 = set_vertex_attr(NRnet.sub2, "T3_NRnet", index = V(NRnet.sub2), as.character(all.genes$T3.label))
+V(NRnet.sub2)$color = ifelse(V(NRnet.sub2)$name == "CDX2" | V(NRnet.sub2)$name == "CD24" | 
+                               V(NRnet.sub2)$name == "SLC39A1" | V(NRnet.sub2)$name == "SLC39A2" | V(NRnet.sub2)$name == "SLC39A3" |
+                               V(NRnet.sub2)$name == "SLC39A4" | V(NRnet.sub2)$name == "SLC39A5" | V(NRnet.sub2)$name == "SLC39A6" |
+                               V(NRnet.sub2)$name == "SLC39A8" | V(NRnet.sub2)$name == "SLC39A10" | V(NRnet.sub2)$name == "SLC39A14", "red",
+                             ifelse(V(NRnet.sub2)$T1_NRnet == '1', "coral", 
+                                    ifelse(V(NRnet.sub2)$T2_NRnet == '1', "steelblue",
+                                           ifelse(V(NRnet.sub2)$T3_NRnet == '1', "darkseagreen","grey90")))) 
+legend_cats = data.frame(attr = c("Terminal1", "Terminal2", "Terminal3", 'SLC39/CDX2/CD24', 'Other genes'),
+                         color = c("coral", "steelblue", "darkseagreen", 'red', 'grey90'))
+node_degree = igraph::degree(NRnet.sub2, mode = "all")  
+scale_factor = 0.05  
+V(NRnet.sub2)$size[which(V(NRnet.sub2)$color == 'grey90')] = 4 + (node_degree[which(V(NRnet.sub2)$color == 'grey90')] * scale_factor)
+V(NRnet.sub2)$size[which(V(NRnet.sub2)$color != 'grey90')] = 8 + (node_degree[which(V(NRnet.sub2)$color != 'grey90')] * scale_factor)
+fixed_label_size = 0.5  
+V(NRnet.sub2)$label.cex = fixed_label_size
+PFSlow_graph = NRnet.sub2
+layout = layout_with_fr(NRnet.sub2,niter = 10000)
+######## Supple figure 4E
+pdf("/github/Figure/Supple/Fig4/e_ICI_PFS_low_network.pdf", width = 16, height = 8)
+plot.igraph(NRnet.sub2, layout = layout, asp = 0, main = "PFS<6 Network with Terminal",
+            vertex.frame.color = "white",
+            vertex.shape = "circle",
+            vertex.label.color = "black",
+            vertex.label.family = "Times",
+            vertex.label.font = 0.01,
+            vertex.label.cex = 0.01,  
+            edge.arrow.size = 0.1)
+legend(x = "bottomleft",
+       legend = legend_cats$attr,
+       pch = 19,
+       col = legend_cats$color,
+       bty = "n",
+       title = "Genes in Network")
+dev.off()
+
+
+
+Rnet = sorted.net.list2[['no']]
+Rnet.genes = unique(c(Rnet[,1],Rnet[,2]))
+T1.genes.Rnet = as.character(T1.genes[T1.genes %in% Rnet.genes])
+T2.genes.Rnet = as.character(T2.genes[T2.genes %in% Rnet.genes])
+T3.genes.Rnet = as.character(T3.genes[T3.genes %in% Rnet.genes])
+Rnetsub2.genes = unique(c(Rnet[, 1], Rnet[, 2]))
+Rnet.sub2 = graph.data.frame(Rnet, directed = F)
+all.genes = data.frame(genes = Rnetsub2.genes)
+all.genes$T1.label = ifelse(all.genes$genes %in% T1.genes.Rnet, 1, 0)
+all.genes$T2.label = ifelse(all.genes$genes %in% T2.genes.Rnet, 1, 0)
+all.genes$T3.label = ifelse(all.genes$genes %in% T3.genes.Rnet, 1, 0)
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T1_Rnet", index = V(Rnet.sub2), as.character(all.genes$T1.label))
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T2_Rnet", index = V(Rnet.sub2), as.character(all.genes$T2.label))
+Rnet.sub2 = set_vertex_attr(Rnet.sub2, "T3_Rnet", index = V(Rnet.sub2), as.character(all.genes$T3.label))
+V(Rnet.sub2)$color = ifelse(V(Rnet.sub2)$name == "CDX2" |V(Rnet.sub2)$name == "CD24" | 
+                              V(Rnet.sub2)$name == "SLC39A1" | V(Rnet.sub2)$name == "SLC39A2" | V(Rnet.sub2)$name == "SLC39A3" |
+                              V(Rnet.sub2)$name == "SLC39A4" | V(Rnet.sub2)$name == "SLC39A5" | V(Rnet.sub2)$name == "SLC39A6" |
+                              V(Rnet.sub2)$name == "SLC39A8" | V(Rnet.sub2)$name == "SLC39A10" | V(Rnet.sub2)$name == "SLC39A14", "red",
+                            ifelse(V(Rnet.sub2)$T1_Rnet == '1', "coral", 
+                                   ifelse(V(Rnet.sub2)$T2_Rnet == '1', "steelblue",
+                                          ifelse(V(Rnet.sub2)$T3_Rnet == '1', "darkseagreen","grey90")))) 
+legend_cats = data.frame(attr = c("Terminal1", "Terminal2", "Terminal3", 'SLC39/CDX2/CD24', 'Other genes'),
+                         color = c("coral", "steelblue", "darkseagreen", 'red', 'grey90'))
+node_degree = igraph::degree(Rnet.sub2, mode = "all")  
+scale_factor = 0.05  
+V(Rnet.sub2)$size[which(V(Rnet.sub2)$color == 'grey90')] = 4 + (node_degree[which(V(Rnet.sub2)$color == 'grey90')] * scale_factor)
+V(Rnet.sub2)$size[which(V(Rnet.sub2)$color != 'grey90')] = 8 + (node_degree[which(V(Rnet.sub2)$color != 'grey90')] * scale_factor)
+fixed_label_size = 0.5  
+V(Rnet.sub2)$label.cex = fixed_label_size
+PFShigh_graph = Rnet.sub2
+layout = layout_with_fr(Rnet.sub2,niter = 10000)
+######## Supple figure 4E
+pdf("/github/Figure/Supple/Fig4/e_ICI_PFS_high_network.pdf", width = 16, height = 8)
+plot.igraph(Rnet.sub2, layout = layout, asp = 0, main = "PFS>6 Network with Terminal",
+            vertex.frame.color = "white",
+            vertex.shape = "circle",
+            vertex.label.color = "black",
+            vertex.label.family = "Times",
+            vertex.label.font = 0.01,
+            vertex.label.cex = 0.01,  
+            edge.arrow.size = 0.1 
+)
+legend(x = "bottomleft",
+       legend = legend_cats$attr,
+       pch = 19,
+       col = legend_cats$color,
+       bty = "n",
+       title = "Genes in Network")
+dev.off()
+
+
+
+
+
+
+sig.list = list()
+sig.list[[1]] = T1.genes
+sig.list[[2]] = T2.genes
+sig.list[[3]] = T3.genes
+names(sig.list) = c('T1', 'T2', 'T3')
+sig.connectivity1 = DeconvoluteNet(network = sorted.net.list1, geneset = sig.list)
+connectivity.sum1 = with(sig.connectivity1,tapply(connectivity.normalized,signature_name,FUN=sum))
+sig.connectivity1$scHumanNet = factor(sig.connectivity1$scHumanNet, levels = c("NR", "R"))
+sig.connectivity2 = DeconvoluteNet(network = sorted.net.list2, geneset = sig.list)
+connectivity.sum2 = with(sig.connectivity2,tapply(connectivity.normalized,signature_name,FUN=sum))
+sig.connectivity2$scHumanNet = factor(sig.connectivity2$scHumanNet, levels = c("yes", "no"))
+
+######## Supple figure 4F
+pdf("/github/Figure/Supple/Fig4/f_Connect.pdf.pdf", width = 12, height = 4)
+ggplot(sig.connectivity1, aes(signature_name, connectivity.normalized, color = scHumanNet)) +
+  geom_point() + 
+  geom_line(aes(group = scHumanNet),data = sig.connectivity1) +
+  scale_color_manual(values = c("cyan3", "grey")) +
+  theme(legend.position = "top") +  labs(y="Connectivity") + theme_classic()  +
+  ggplot(sig.connectivity2, aes(signature_name, connectivity.normalized, color = scHumanNet)) +
+  geom_point() + 
+  geom_line(aes(group = scHumanNet),data = sig.connectivity2) +
+  scale_color_manual(values = c("purple", "grey")) +
+  theme(legend.position = "top") +  labs(y="Connectivity", color = 'PFS<6') + theme_classic()
+dev.off()
+
+
+NR_degree = igraph::degree(NR_graph, normalized = T)
+NR_eigen = evcent(NR_graph)$vector
+R_degree = igraph::degree(R_graph, normalized = T)
+R_eigen = evcent(R_graph)$vector
+PFSlow_degree = igraph::degree(PFSlow_graph, normalized = T)
+PFSlow_eigen = evcent(PFSlow_graph)$vector
+PFShigh_degree = igraph::degree(PFShigh_graph, normalized = T)
+PFShigh_eigen = evcent(PFShigh_graph)$vector
+resp_degree = data.frame(c(NR_degree[which(V(NR_graph)$T1_NRnet == '1')],R_degree[which(V(R_graph)$T1_Rnet == '1')],
+                           NR_degree[which(V(NR_graph)$T2_NRnet == '1')],R_degree[which(V(R_graph)$T2_Rnet == '1')],
+                           NR_degree[which(V(NR_graph)$T3_NRnet == '1')],R_degree[which(V(R_graph)$T3_Rnet == '1')]),
+                         c(rep('NR',25),rep('R',6), rep('NR',24),rep('R',45), rep('NR',18),rep('R',34)),
+                         c(rep('T1',31), rep('T2',69), rep('T3',52)))
+rownames(resp_degree) = NULL
+colnames(resp_degree) = c('Degree','Response','Terminal')
+resp_degree$Response = factor(resp_degree$Response, levels = c("R", "NR"))
+resp_degree.summary = resp_degree %>% group_by(Response, Terminal) %>% dplyr::summarise(sd = sd(Degree), Degree = mean(Degree))
+length(which(V(PFShigh_graph)$T1_Rnet == '1'))
+PFS_degree = data.frame(c(PFSlow_degree[which(V(PFSlow_graph)$T1_NRnet == '1')],PFShigh_degree[which(V(PFShigh_graph)$T1_Rnet == '1')],
+                          PFSlow_degree[which(V(PFSlow_graph)$T2_NRnet == '1')],PFShigh_degree[which(V(PFShigh_graph)$T2_Rnet == '1')],
+                          PFSlow_degree[which(V(PFSlow_graph)$T3_NRnet == '1')],PFShigh_degree[which(V(PFShigh_graph)$T3_Rnet == '1')]),
+                        c(rep('yes',14),rep('no',8), rep('yes',20),rep('no',37), rep('yes',23),rep('no',29)),
+                        c(rep('T1',22), rep('T2',57), rep('T3',52)))
+rownames(PFS_degree) = NULL
+colnames(PFS_degree) = c('Degree','PFS','Terminal')
+PFS_degree$PFS = factor(PFS_degree$PFS, levels = c("no", "yes"))
+PFS_degree.summary = PFS_degree %>% group_by(PFS, Terminal) %>% dplyr::summarise(sd = sd(Degree), Degree = mean(Degree))
+resp_eigen = data.frame(c(NR_eigen[which(V(NR_graph)$T1_NRnet == '1')],R_eigen[which(V(R_graph)$T1_Rnet == '1')],
+                          NR_eigen[which(V(NR_graph)$T2_NRnet == '1')],R_eigen[which(V(R_graph)$T2_Rnet == '1')],
+                          NR_eigen[which(V(NR_graph)$T3_NRnet == '1')],R_eigen[which(V(R_graph)$T3_Rnet == '1')]),
+                        c(rep('NR',25),rep('R',6), rep('NR',24),rep('R',45), rep('NR',18),rep('R',34)),
+                        c(rep('T1',31), rep('T2',69), rep('T3',52)))
+rownames(resp_eigen) = NULL
+colnames(resp_eigen) = c('eigen','Response','Terminal')
+resp_eigen$Response = factor(resp_eigen$Response, levels = c("R", "NR"))
+resp_eigen.summary = resp_eigen %>% group_by(Response, Terminal) %>% dplyr::summarise(sd = sd(eigen), eigen = mean(eigen))
+PFS_eigen = data.frame(c(PFSlow_eigen[which(V(PFSlow_graph)$T1_NRnet == '1')],PFShigh_eigen[which(V(PFShigh_graph)$T1_Rnet == '1')],
+                         PFSlow_eigen[which(V(PFSlow_graph)$T2_NRnet == '1')],PFShigh_eigen[which(V(PFShigh_graph)$T2_Rnet == '1')],
+                         PFSlow_eigen[which(V(PFSlow_graph)$T3_NRnet == '1')],PFShigh_eigen[which(V(PFShigh_graph)$T3_Rnet == '1')]),
+                       c(rep('yes',14),rep('no',8), rep('yes',20),rep('no',37), rep('yes',23),rep('no',29)),
+                       c(rep('T1',22), rep('T2',57), rep('T3',52)))
+rownames(PFS_eigen) = NULL
+colnames(PFS_eigen) = c('eigen','PFS','Terminal')
+PFS_eigen$PFS = factor(PFS_eigen$PFS, levels = c("no", "yes"))
+PFS_eigen.summary = PFS_eigen %>% group_by(PFS, Terminal) %>% dplyr::summarise(sd = sd(eigen), eigen = mean(eigen))
+######## Supple figure 4F
+pdf("/github/Figure/Supple/Fig4/f_Degree.pdf", width = 12, height = 4)
+ggplot(resp_degree.summary, aes(Terminal, Degree, color = Response)) +
+  geom_point() + 
+  geom_line(aes(group = Response),data = resp_degree.summary) +
+  scale_color_manual(values = c("grey", "cyan3")) +
+  theme(legend.position = "top") +  labs(y="Degree Centrality") + theme_classic()  +
+  ggplot(PFS_degree.summary, aes(Terminal, Degree, color = PFS)) +
+  geom_point() + 
+  geom_line(aes(group = PFS),data = PFS_degree.summary) +
+  scale_color_manual(values = c("grey", "purple")) +
+  theme(legend.position = "top") +  labs(y="Degree Centrality", color = 'PFS<6') + theme_classic()
+dev.off()
+######## Supple figure 4F
+pdf("/github/Figure/Supple/Fig4/f_Eigen.pdf", width = 12, height = 4)
+ggplot(resp_eigen.summary, aes(Terminal, eigen, color = Response)) +
+  geom_point() + 
+  geom_line(aes(group = Response),data = resp_eigen.summary) +
+  scale_color_manual(values = c("grey", "cyan3")) +
+  theme(legend.position = "top") +  labs(y="Eigen Centrality") + theme_classic()  +
+  ggplot(PFS_eigen.summary, aes(Terminal, eigen, color = PFS)) +
+  geom_point() + 
+  geom_line(aes(group = PFS),data = PFS_eigen.summary) +
+  scale_color_manual(values = c("grey", "purple")) +
+  theme(legend.position = "top") +  labs(y="Eigen Centrality", color = 'PFS<6') + theme_classic() 
+dev.off()
+
+
+NR_pr = page.rank(NR_graph)$vector
+R_pr = page.rank(R_graph)$vector
+PFSlow_pr = page.rank(PFSlow_graph)$vector
+PFShigh_pr = page.rank(PFShigh_graph)$vector
+resp_pr = data.frame(c(NR_pr[which(V(NR_graph)$T1_NRnet == '1')],R_pr[which(V(R_graph)$T1_Rnet == '1')],
+                       NR_pr[which(V(NR_graph)$T2_NRnet == '1')],R_pr[which(V(R_graph)$T2_Rnet == '1')],
+                       NR_pr[which(V(NR_graph)$T3_NRnet == '1')],R_pr[which(V(R_graph)$T3_Rnet == '1')]),
+                     c(rep('NR',25),rep('R',6), rep('NR',24),rep('R',45), rep('NR',18),rep('R',34)),
+                     c(rep('T1',31), rep('T2',69), rep('T3',52)))
+rownames(resp_pr) = NULL
+colnames(resp_pr) = c('PageRank','Response','Terminal')
+resp_pr$Response = factor(resp_pr$Response, levels = c("R", "NR"))
+resp_pr.summary = resp_pr %>% group_by(Response, Terminal) %>% dplyr::summarise(sd = sd(PageRank), PageRank = mean(PageRank))
+PFS_pr = data.frame(c(PFSlow_pr[which(V(PFSlow_graph)$T1_NRnet == '1')],PFShigh_pr[which(V(PFShigh_graph)$T1_Rnet == '1')],
+                      PFSlow_pr[which(V(PFSlow_graph)$T2_NRnet == '1')],PFShigh_pr[which(V(PFShigh_graph)$T2_Rnet == '1')],
+                      PFSlow_pr[which(V(PFSlow_graph)$T3_NRnet == '1')],PFShigh_pr[which(V(PFShigh_graph)$T3_Rnet == '1')]),
+                    c(rep('yes',14),rep('no',8), rep('yes',20),rep('no',37), rep('yes',23),rep('no',29)),
+                    c(rep('T1',22), rep('T2',57), rep('T3',52)))
+rownames(PFS_pr) = NULL
+colnames(PFS_pr) = c('PageRank','PFS','Terminal')
+PFS_pr$PFS = factor(PFS_pr$PFS, levels = c("no", "yes"))
+PFS_pr.summary = PFS_pr %>% group_by(PFS, Terminal) %>% dplyr::summarise(sd = sd(PageRank), PageRank = mean(PageRank))
+######## Supple figure 4F
+pdf("/github/Figure/Supple/Fig4/f_PR.pdf", width = 12, height = 4)
+ggplot(resp_pr.summary, aes(Terminal, PageRank, color = Response)) +
+  geom_point() + 
+  geom_line(aes(group = Response),data = resp_pr.summary) +
+  scale_color_manual(values = c("grey", "cyan3")) +
+  theme(legend.position = "top") +  labs(y="Page Rank") + theme_classic()  +
+  ggplot(PFS_pr.summary, aes(Terminal, PageRank, color = PFS)) +
+  geom_point() + 
+  geom_line(aes(group = PFS),data = PFS_pr.summary) +
+  scale_color_manual(values = c("grey", "purple")) +
+  theme(legend.position = "top") +  labs(y="Page Rank", color = 'PFS<6') + theme_classic()
+dev.off()

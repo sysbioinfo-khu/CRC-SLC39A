@@ -1,0 +1,202 @@
+library(Matrix)
+library(hdf5r)
+library(Seurat)
+library(rhdf5)
+library(CMScaller)
+library(org.Hs.eg.db)
+
+Epithelial = H5Fopen("/github/singlecell_data/SG/data/rawdata/Epithelial_Count_matrix.h5") 
+h5ls(Epithelial) 
+Epithelial = h5read(Epithelial, "/matrix") 
+row_indices = (Epithelial$indices - 1) %% 33287 + 1  
+col_indices = (Epithelial$indices - 1) %/% 49155 + 1  
+sparse_matrix1 = sparseMatrix(i = row_indices, j = col_indices + 1, x = as.integer(Epithelial$data), dims = c(33287, 49155))
+colnames(sparse_matrix1) = Epithelial$barcodes
+rownames(sparse_matrix1) = Epithelial$features$name
+NonEpithelial = H5Fopen("/github/singlecell_data/SG/data/rawdata/NonEpithelial_Count_matrix.h5") 
+h5ls(NonEpithelial) 
+NonEpithelial = h5read(NonEpithelial, "/matrix") 
+row_indices = (NonEpithelial$indices - 1) %% 33287 + 1  
+col_indices = (NonEpithelial$indices - 1) %/% 323903 + 1  
+sparse_matrix2 = sparseMatrix(i = row_indices, j = col_indices + 1, x = as.numeric(NonEpithelial$data), dims = c(33287, 323903))
+colnames(sparse_matrix2) = as.character(NonEpithelial$barcodes)
+rownames(sparse_matrix2) = as.character(NonEpithelial$features$name)
+
+data = cbind(sparse_matrix1, sparse_matrix2)
+sc = CreateSeuratObject(counts = data, min.cells = 3, min.features = 200)
+clinic = read.csv('/github/singlecell_data/SG/data/rawdata/patient_clinical_information.csv', header = T)
+epi_meta = read.csv('/github/singlecell_data/SG/data/rawdata/Epithelial_metadata.csv', header = T, row.names = 1)
+epi_meta$CMS = NA
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S02')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S03')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S04')] = 'unknown'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S05')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S06')] = 'unknown'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S07')] = 'CMS2'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S08')] = 'CMS2'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S10')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S12')] = 'unknown'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S13')] = 'unknown'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S14')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC-JSC-S15')] = 'unknown'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2783')] = 'CMS1'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2786')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2787')] = 'CMS1'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2794')] = 'CMS2'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2795')] = 'CMS2'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2801')] = 'CMS4'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2803')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2810')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2811')] = 'CMS2'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2816')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2817')] = 'CMS1'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2821')] = 'CMS3'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2841')] = 'CMS4'
+epi_meta$CMS[which(epi_meta$patient.ID == 'CRC2899')] = 'CMS2'
+nonepi_meta = read.csv('/github/singlecell_data/SG/data/rawdata/NonEpithelial_metadata.csv', header = T, row.names = 1)
+nonepi_meta$msi = 'No_info'
+nonepi_meta$CMS = 'No_info'
+meta = rbind(epi_meta[,-9],nonepi_meta)
+
+sc$sample.ID = meta$sample.ID
+sc$patient.ID = meta$patient.ID
+sc$sample.origin = meta$sample.origin
+sc$dataset = meta$dataset
+sc$cell.type = meta$cell.type
+sc$msi = meta$msi
+sc$CMS = meta$CMS
+sc = subset(sc, dataset == 'CRC-SG1' | dataset == 'CRC-SG2')
+sc = subset(sc, sample.origin == 'Tumor' | sample.origin == 'Tumor-2')
+sc[["percent.mt"]] = PercentageFeatureSet(sc, pattern = "MT")
+sc = subset(sc, subset =  nFeature_RNA > 200 & nCount_RNA < 100000  & percent.mt < 3)
+sc = NormalizeData(sc)
+all.genes = rownames(sc)
+sc = ScaleData(sc, features = all.genes)
+sc = FindVariableFeatures(sc, selection.method = "vst", nfeatures = 2000)
+sc = RunPCA(sc, features = VariableFeatures(object = sc))
+sc = FindNeighbors(sc, dims = 1:10,reduction = 'pca')
+sc = FindClusters(sc, resolution = 0.5)
+sc = RunUMAP(sc,dims = 1:10, reduction = 'pca')
+
+sc$Annotation = ''
+sc$Annotation[which(sc$seurat_clusters == 3 | sc$seurat_clusters == 6 | sc$seurat_clusters == 17)] = 'Epithelial'
+sc$Annotation[which(sc$seurat_clusters == 0 | sc$seurat_clusters == 2 | sc$seurat_clusters == 18)] = 'Tcell'
+sc$Annotation[which(sc$seurat_clusters == 15)] = 'Mast'
+sc$Annotation[which(sc$seurat_clusters == 7 | sc$seurat_clusters == 8 | sc$seurat_clusters == 1)] = 'Bcell'
+sc$Annotation[which(sc$seurat_clusters == 14 | sc$seurat_clusters == 12 | sc$seurat_clusters == 5 | sc$seurat_clusters == 11 | sc$seurat_clusters == 20 | sc$seurat_clusters == 19)] = 'Fibroblast'
+sc$Annotation[which(sc$seurat_clusters == 10 | sc$seurat_clusters == 21 | sc$seurat_clusters == 22)] = 'Endothelial'
+FeaturePlot(sc,label = T,'CD163') + FeaturePlot(sc,label = T,'CD14') 
+sc$Annotation[which(sc$seurat_clusters == 4 | sc$seurat_clusters == 9 | sc$seurat_clusters == 13 | sc$seurat_clusters == 16)] = 'Myeloid'
+
+cancer = subset(sc,Annotation == 'Epithelial')
+gene_list = rownames(cancer)
+hs = org.Hs.eg.db
+sc = select(hs,keys = gene_list,columns = c("ENTREZID", "SYMBOL"),keytype = "SYMBOL")
+sc = sc[-which(duplicated(sc$SYMBOL)),]
+expr = cancer@assays$RNA$scale.data
+expr = expr[-which(is.na(sc$ENTREZID)),]
+sc = sc[-which(is.na(sc$ENTREZID)),]
+rownames(expr) = sc$ENTREZID
+cms = CMScaller(expr)
+cancer$scCMS1 = as.vector(cms$prediction)
+cancer$scCMS1[which(is.na(cancer$scCMS1))] = 'unknown'
+
+geneset = list()
+geneset[[1]] = c('SLC39A1','SLC39A2','SLC39A3','SLC39A4','SLC39A5','SLC39A6','SLC39A8','SLC39A10','SLC39A14')
+names(geneset)[1] = 'Zinc import by SLC39' 
+scRep_example = runEscape(sc, method = "ssGSEA", gene.sets = geneset,  groups = 5000, min.size = 0,new.assay.name = "escape.ssGSEA",BPPARAM = SnowParam(workers = 70))
+sc@meta.data[,'Zinc.SLC39'] = scRep_example@assays$escape.ssGSEA$data
+
+rna_data = sc@assays$RNA$scale.data
+coad_regulon = readRDS('/github/model_data/Viper/COAD_regulon.rds')
+coad_regulon = coad_regulon[grep('CDX2',names(coad_regulon))]
+res = viper(rna_data, coad_regulon)
+rownames(res) = paste0('protein_',rownames(res))
+res = data.frame(t(res))
+sc@meta.data[,'CDX2PA'] = res[,'protein_CDX2']
+#qsave(sc,'/github/singlecell_data/SG/data/SG_processed_data.qs')
+
+
+######## Main figure 3a
+pdf("/github/Figure/Main/Fig3/a_Total_dimplot.pdf", width = 16, height = 8)
+DimPlot(sc)
+dev.off()
+
+
+######## Main figure 3b
+pdf("/github/Figure/Main/Fig3/b_Vlnplot.pdf", width = 6, height = 12)
+VlnPlot(sc, c('Zinc.SLC39','CDX2','CDX2PA','CD24'), pt.size=0, ncol = 1)
+dev.off()
+
+
+######## Supple figure 3a
+pdf("/github/Figure/Supple/Fig3/a_markergene.pdf", width = 16, height = 8)
+FeaturePlot(sc, c('EPCAM','KRT8','KRT18','CD3D','CD3E','CD79A','CD163','CD14','COL1A1','CLDN5','CDH19'))
+dev.off()
+
+
+######## Supple figure 3c
+pdf("/github/Figure/Supple/Fig3/c_CD47.pdf", width = 4, height = 6)
+VlnPlot(sc, c('CD24','CD47'), pt.size=0, ncol = 1)
+dev.off()
+
+
+rna_data = sc@assays$RNA$scale.data
+rna_data = rbind(rna_data,t(sc@meta.data$CDX2PA))
+rna_data = rbind(rna_data,t(sc@meta.data$Zinc.SLC39))
+rownames(rna_data)[29843:29844] = c('CDX2PA','Zinc.SLC39')
+Tcell = data.frame(t(rna_data[,rownames(sc@meta.data)[which(sc$celltype == 'Tcell')]]))
+Bcell = data.frame(t(rna_data[,rownames(sc@meta.data)[which(sc$celltype == 'Bcell')]]))
+Myeloid = data.frame(t(rna_data[,rownames(sc@meta.data)[which(sc$celltype == 'Myeloid')]]))
+Endothelial = data.frame(t(rna_data[,rownames(sc@meta.data)[which(sc$celltype == 'Endothelial')]]))
+Fibroblast = data.frame(t(rna_data[,rownames(sc@meta.data)[which(sc$celltype == 'Fibroblast')]]))
+Schwann = data.frame(t(rna_data[,rownames(sc@meta.data)[which(sc$celltype == 'Schwann')]]))
+Cancer = data.frame(t(rna_data[,rownames(sc@meta.data)[which(sc$celltype == 'Cancer')]]))
+single_cor = function(x,y){
+  a = cor.test(Tcell[,x],Tcell[,y])[[3]]
+  b = cor.test(Bcell[,x],Bcell[,y])[[3]]
+  c = cor.test(Myeloid[,x],Myeloid[,y])[[3]]
+  d = cor.test(Endothelial[,x],Endothelial[,y])[[3]]
+  e = cor.test(Cancer[,x],Cancer[,y])[[3]]
+  f = cor.test(Fibroblast[,x],Fibroblast[,y])[[3]]
+  g = cor.test(Schwann[,x],Schwann[,y])[[3]]
+  a1 = cor.test(Tcell[,x],Tcell[,y])[[4]]
+  b1 = cor.test(Bcell[,x],Bcell[,y])[[4]]
+  c1 = cor.test(Myeloid[,x],Myeloid[,y])[[4]]
+  d1 = cor.test(Endothelial[,x],Endothelial[,y])[[4]]
+  e1 = cor.test(Cancer[,x],Cancer[,y])[[4]]
+  f1 = cor.test(Fibroblast[,x],Fibroblast[,y])[[4]]
+  g1 = cor.test(Schwann[,x],Schwann[,y])[[4]]
+  
+  pval = c(a,b,c,d,e,f,g)
+  coeff = c(a1,b1,c1,d1,e1,f1,g1)
+  res_df = data.frame(cbind(pval,coeff))
+  res_df$type = paste0(x,'_',y)
+  res_df$celltype = c('Tcell','Bcell','Myeloid','Endothelial','Cancer','Fibroblast','Schwann')
+  rownames(res_df) = NULL
+  return(res_df)
+}
+
+
+cor_df = rbind(single_cor('Zinc.SLC39','CDX2'),single_cor('Zinc.SLC39','CDX2PA'),
+               single_cor('CDX2','CD24'),single_cor('CDX2PA','CD24'),
+               single_cor('Zinc.SLC39','CD24'))
+cor_df$type[which(cor_df$type == 'Zinc.SLC39_CDX2')] = 'Zinc influx by SLC39 ~ CDX2'
+cor_df$type[which(cor_df$type == 'Zinc.SLC39_protein_CDX2')] = 'Zinc influx by SLC39 ~ CDX2 activity'
+cor_df$type[which(cor_df$type == 'CDX2_CD24')] = 'CDX2 ~ CD24'
+cor_df$type[which(cor_df$type == 'protein_CDX2_CD24')] = 'CDX2 activity ~ CD24'
+cor_df$type[which(cor_df$type == 'Zinc.SLC39_CD24')] = 'CD24 ~ Zinc influx by SLC39'
+x_level_order = c('Cancer','Tcell','Bcell','Fibroblast','Myeloid','Endothelial','Schwann')
+y_level_order = unique(cor_df$type)
+cor_df$pval = cor_df$pval + 0.000000000000000000000000001
+
+######## Main figure 3b
+pdf("/github/Figure/Main/Fig3/b_all_cor_plot.pdf", width = 16, height = 8)
+ggplot(cor_df, aes(x = factor(celltype, level = x_level_order), y = factor(type,level = rev(y_level_order)))) + theme_classic() +
+  geom_point(aes(size = -log10(pval), fill = coeff), shape = 21,
+             colour = ifelse(cor_df$pval < 0.05, 'black', 'white')) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, na.value = 'grey') +
+  scale_size(range = c(6, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) 
+dev.off()

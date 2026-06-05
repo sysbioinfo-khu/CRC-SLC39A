@@ -1,0 +1,105 @@
+library(monocle3)
+library(SeuratWrappers)
+
+sc = qread('/github/singlecell_data/SG/data/SG_processed_data.qs')
+Myeloid = subset(sc,celltype =='Myeloid')
+Myeloid = FindVariableFeatures(Myeloid, selection.method = "vst")
+Myeloid = RunPCA(Myeloid, features = VariableFeatures(object = Myeloid))
+Myeloid = FindNeighbors(Myeloid, dims = 1:10,reduction = 'pca')
+Myeloid = FindClusters(Myeloid, resolution = 1)
+Myeloid = RunUMAP(Myeloid,dims = 1:10, reduction = 'pca')
+
+
+Myeloid@meta.data[,'celltype'] = NA
+Myeloid@meta.data[which(Myeloid$seurat_clusters == 0 | Myeloid$seurat_clusters == 2 |
+                          Myeloid$seurat_clusters == 3 | Myeloid$seurat_clusters == 5 |
+                          Myeloid$seurat_clusters == 10 | Myeloid$seurat_clusters == 11 |
+                          Myeloid$seurat_clusters == 12 | Myeloid$seurat_clusters == 13 |
+                          Myeloid$seurat_clusters == 15),'celltype'] = 'Macrophage'
+Myeloid@meta.data[which(Myeloid$seurat_clusters == 1| Myeloid$seurat_clusters == 8 |
+                          Myeloid$seurat_clusters == 9 | Myeloid$seurat_clusters == 14),'celltype'] = 'Monocyte'
+Myeloid@meta.data[which(Myeloid$seurat_clusters == 4| Myeloid$seurat_clusters == 16 |
+                          Myeloid$seurat_clusters == 17),'celltype'] = 'DC'
+Myeloid@meta.data[which(Myeloid$seurat_clusters == 7),'celltype'] = 'Mast'
+Myeloid@meta.data[which(Myeloid$seurat_clusters == 6),'celltype'] = 'Neutrophil'
+Myeloid@meta.data[which(Myeloid$seurat_clusters == 18),'celltype'] = 'NKT'
+Idents(Myeloid) = Myeloid$celltype
+
+
+DC = subset(Myeloid,celltype == 'DC')
+sub_DC = FindSubCluster(DC, "DC", "RNA_nn", subcluster.name = "subDC",  resolution = 0.5, algorithm = 1)
+Idents(sub_DC) = sub_DC$subDC
+sub_DC$DC.celltype = 'moDC'
+sub_DC$DC.celltype[which(sub_DC$subDC == 'DC_4')] = 'cDC' 
+sub_DC$DC.celltype[which(sub_DC$subDC == 'DC_6')] = 'pDC' 
+Idents(sub_DC) = sub_DC$DC.celltype
+
+
+MC = subset(Myeloid,celltype == 'Macrophage')
+sub_MC = FindSubCluster(MC, "Macrophage", "RNA_nn", subcluster.name = "subMC",  resolution = 0.1, algorithm = 1)
+Idents(sub_MC) = sub_MC$subMC
+sub_MC$MC.celltype = 'moMC'
+sub_MC$MC.celltype[which(sub_MC$subMC == 'Macrophage_1')] = 'RTMC'
+Idents(sub_MC) = sub_MC$MC.celltype
+
+
+DC_meta = data.frame('cell' = rownames(sub_DC@meta.data),'subcelltype' = sub_DC@meta.data$DC.celltype)
+MC_meta = data.frame('cell' = rownames(sub_MC@meta.data),'subcelltype' = sub_MC@meta.data$MC.celltype)
+sub_meta = rbind(DC_meta,MC_meta)
+meta = data.frame('cell' = rownames(Myeloid@meta.data),'celltype' = Myeloid@meta.data$celltype)
+meta = merge(meta,sub_meta,by = 'cell', all = T)
+meta$subcelltype[which(meta$celltype == 'Monocyte')] = 'Monocyte'
+meta$subcelltype[which(meta$celltype == 'Mast')] = 'Mast'
+meta$subcelltype[which(meta$celltype == 'Neutrophil')] = 'Neutrophil'
+meta$subcelltype[which(meta$celltype == 'NKT')] = 'NKT'
+Myeloid@meta.data[,'subcelltype'] = meta$subcelltype
+
+######## Main figure 5b
+pdf("/github/Figure/Main/Fig5/b_Myeloid_umap.pdf", width = 12, height = 6)
+DimPlot(Myeloid,group.by = 'subcelltype')
+dev.off()
+
+png("/github/Figure/Main/Fig5/b_Myeloid_umap.png", width = 1200, height = 600)
+DimPlot(Myeloid,group.by = 'subcelltype')
+dev.off()
+
+pdf("/github/Figure/Main/Fig5/b_SIGLEC10_vlnplot.pdf", width = 12, height = 6)
+VlnPlot(sc,'SIGLEC10',pt.size = 0) + VlnPlot(Myeloid,c('SIGLEC10'),pt.size = 0)
+dev.off()
+
+
+levels_ordered = c("Monocyte", "RTMC", 'moMC','moDC','pDC','cDC','Mast','Neutrophil',"NKT")
+Idents(Myeloid) = factor(Idents(Myeloid), levels = levels_ordered)
+my_markers = c('VCAN', 'CD300E', 'FCN1','S100A8','S100A12',
+               'SELENOP', 'MAF', 'STAB1', 'LYVE1', 'ITGB5',
+               'MARCO', 'CCL18', 'SPP1', 'SPARC', 'CYP27A1',
+               'CD1C', 'CLEC10A', 'JAML', 'LGALS2', 'CST7',
+               'CLEC4C','LILRA4','IL3RA','TLR7','MZB1', 'IGHM',
+               'LAMP3','FSCN1','CCR7','CCL19','CCL22','H2AFY2',
+               'CPA3', 'TPSAB1','TPSB2', 'KIT', 'MS4A2',
+               'FCGR3B', 'CSF3R','G0S2', 'HCAR3', 'S100P',
+               'KLRB1','CD3E', 'CD3D', 'CD3G', 'TRBC2')
+
+######## Supple figure 5c
+pdf("/github/Figure/Supple/Fig5/c_Myeloid_markers.pdf", width = 20, height = 12)
+DotPlot(object = Myeloid, features = my_markers,cols="RdYlBu") + scale_size(range = c(8, 12)) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+dev.off()
+
+
+sub_meta = data.frame('cell' = rownames(Myeloid@meta.data),'subcelltype' = Myeloid@meta.data$subcelltype)
+meta = data.frame('cell' = rownames(sc@meta.data),'celltype' = sc@meta.data$celltype)
+meta = merge(meta,sub_meta,by = 'cell', all = T)
+rownames(meta) = meta$cell
+meta = meta[rownames(sc@meta.data),]
+meta$subcelltype[which(meta$celltype == 'Bcell')] = 'Bcell'
+meta$subcelltype[which(meta$celltype == 'Tcell')] = 'Tcell'
+meta$subcelltype[which(meta$celltype == 'Cancer')] = 'Cancer'
+meta$subcelltype[which(meta$celltype == 'Endothelial')] = 'Endothelial'
+meta$subcelltype[which(meta$celltype == 'Fibroblast')] = 'Fibroblast'
+meta$subcelltype[which(meta$celltype == 'Schwann')] = 'Schwann'
+sc@meta.data[,'subcelltype'] = meta$subcelltype
+DimPlot(sc,group.by = 'subcelltype')
+DimPlot(sc,group.by = 'celltype')
+Idents(sc) = sc$subcelltype
+#qsvae(sc,'/github/singlecell_data/SG/data/SG_processed_data.qs')

@@ -1,0 +1,354 @@
+library(nichenetr)
+library(scGSVA)
+library(RColorBrewer)
+library(tidyr)
+
+sc = qread('/github/singlecell_data/SG/data/SG_processed_data.qs')
+Idents(sc) = sc$subcelltype
+sc[['RNA']] = as(object = sc[["RNA"]], Class = "Assay")
+
+rna_data = sc@assays$RNA$scale.data
+annot_data = data.frame(colnames(rna_data),sc$subcelltype)
+Monocyte = data.frame(t(rna_data[,which(sc$subcelltype == 'Monocyte')]))
+Monocyte = apply(Monocyte,2,mean)
+moDC = data.frame(t(rna_data[,which(sc$subcelltype == 'moDC')]))
+moDC = apply(moDC,2,mean)
+moMC = data.frame(t(rna_data[,which(sc$subcelltype == 'moMC')]))
+moMC = apply(moMC,2,mean)
+RTMC = data.frame(t(rna_data[,which(sc$subcelltype == 'RTMC')]))
+RTMC = apply(RTMC,2,mean)
+color = colorRampPalette(rev(brewer.pal(n = 7, name ="RdYlBu")))(100)
+expression_df = data.frame(Monocyte,moDC,moMC,RTMC)
+rownames(expression_df) = rownames(rna_data)
+
+
+################################ moMC
+## receiver
+receiver = "moMC"
+expressed_genes_receiver = get_expressed_genes(receiver, sc, pct = 0.05)
+background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+## sender
+sender = "Cancer"
+list_expressed_genes_sender = get_expressed_genes(sender, sc, pct = 0.05)
+expressed_genes_sender = list_expressed_genes_sender %>% unlist() %>% unique()
+
+geneset = c('DYSF', 'LGALS3', 'ANXA2', 'APOC1', 'NR1H3', 'CD44', 'TGM2', 'CAPG', 'RHOA',
+            'CYP19A1', 'DHX58','LPXN', 'CD86', 'CD80', 'OAS3','CTNNB1', 'PPARG', 'ISG15', 'ADTRP', 'IL4I1',
+            'NLRP2', 'OSBPL11', 'TOR3A','MGAM', 'PPBP', 'MYOZ1','CD9', 'LPL', 'ADM')
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+expressed_ligands = intersect(ligands,expressed_genes_sender)
+expressed_receptors = intersect(receptors,expressed_genes_receiver)
+potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+ligand_activities = predict_ligand_activities(geneset = geneset, background_expressed_genes = background_expressed_genes, ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+ligand_activities = ligand_activities %>% arrange(-auroc)
+best_upstream_ligands = ligand_activities %>% top_n(5, auroc) %>% arrange(-auroc) %>% pull(test_ligand) %>% unique()
+
+active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset, ligand_target_matrix = ligand_target_matrix, n = 50000) %>% bind_rows() %>% drop_na()
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.2)
+order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>% make.names()
+order_targets = active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links)) %>% make.names()
+
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names() 
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names() 
+vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+p_ligand_target_network = vis_ligand_target %>% 
+  make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "purple", legend_position = "top", x_axis_position = "top",
+                      legend_title = "Regulatory potential")  + theme(axis.text.x = element_text(face = "italic")) + 
+  scale_fill_gradient2(low = "whitesmoke",  high = "purple", breaks = c(0,0.05,0.1))
+
+lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+lr_network_top_matrix = lr_network_top_df %>% dplyr::select(-to) %>% as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+
+dist_receptors = dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+vis_ligand_receptor_network = t(vis_ligand_receptor_network)
+vis_ligand_receptor_network = vis_ligand_receptor_network[order_ligands,]
+vis_ligand_receptor_network = vis_ligand_receptor_network[,c('SUCNR1','ITGB2','LRP1','SIGLEC10','IL1R1')]
+p_ligand_receptor_network = vis_ligand_receptor_network %>% make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", x_axis_position = "top",legend_title = "Prior interaction potential")
+
+only_Cancer = subset(sc,celltype == 'Cancer')
+ligand_aupr_matrix = ligand_activities %>% dplyr::select(aupr) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+vis_ligand_aupr = ligand_aupr_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("aupr")
+p_ligand_aupr = vis_ligand_aupr %>% make_heatmap_ggplot("ligands","Ligand activity", color = "orange",
+                                                        legend_position = "top", x_axis_position = "top", 
+                                                        legend_title = "AUPR\n(target gene prediction ability)") + 
+  theme(axis.text.x = element_text(face = "italic")) + scale_fill_gradient2(low = "white",mid = 'white',high = "red")
+
+######## Main figure 5f
+pdf("/github/Figure/Main/Fig5/f_CCI_moMC_ligand.pdf", width = 16, height = 8)
+p_ligand_aupr + 
+  DotPlot(object = only_Cancer, features = order_ligands,cols="RdYlBu") + scale_size(range = c(3, 10)) + coord_flip()
+dev.off()
+
+target_df = expression_df[order_targets,]
+target_df = t(target_df)
+vis_target_tumor_expression_scaled = target_df %>% scale_quantile()
+p_target_tumor_scaled_expression = vis_target_tumor_expression_scaled  %>% make_threecolor_heatmap_ggplot("Cell type","Target", low_color = color[1],mid_color = 'white', mid = 0.5, high_color = color[100], legend_position = "top", x_axis_position = "top" , legend_title = "Scaled expression\n(averaged over\nsingle cells)") + theme(axis.text.x = element_text(face = "italic"))
+
+######## Main figure 5f
+pdf("/github/Figure/Main/Fig5/f_CCI_moMC_potential_target.pdf", width = 16, height = 8)
+p_ligand_receptor_network + p_ligand_target_network + p_target_tumor_scaled_expression
+dev.off()
+
+
+gene_ID = mapIds(org.Hs.eg.db, keys = geneset, keytype = "SYMBOL", column="ENTREZID")
+CC = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "CC", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+BP = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "BP", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+MF = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "MF", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+total = CC
+total@result = rbind(CC@result,BP@result,MF@result)
+total@result = total@result[which(total@result$pvalue <= 0.05),]
+total@result = total@result[order(total@result$pvalue),]
+total@result$GeneRatio = gsub('/',':',total@result$GeneRatio)
+total@result$BgRatio = gsub('/',':',total@result$BgRatio)
+test = total@result
+GO_ID = c('negative regulation of phagocytosis','negative regulation of macrophage activation', 
+          'negative regulation of immune response', 'negative regulation of endocytosis', 
+          'negative regulation of innate immune response', 'negative regulation of response to external stimulus',
+          'regulation of lipid localization', 'regulation of lipid storage')
+path_index = c()  
+for(i in 1:length(GO_ID)){
+  path_index = c(path_index,which(total@result$Description == GO_ID[i]))
+}
+total@result = total@result[path_index,]
+total@geneSets = total@geneSets[path_index]
+total@pvalueCutoff = 0.9
+pdf("/github/Figure/Main/Fig5/g_CCI_moMC_pathway.pdf", width = 16, height = 8)
+treeplot(pairwise_termsim(total),showCategory = 20,
+         nCluster = 4,color = 'pvalue',group_color = c('skyblue', 'lightblue', 'steelblue1', 'salmon1'))
+dev.off()
+
+
+
+
+
+################################ RTMC
+## receiver
+receiver = "RTMC"
+expressed_genes_receiver = get_expressed_genes(receiver, sc, pct = 0.05)
+background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+## sender
+sender = "Cancer"
+list_expressed_genes_sender = get_expressed_genes(sender, sc, pct = 0.05)
+expressed_genes_sender = list_expressed_genes_sender %>% unlist() %>% unique()
+
+geneset = c('NINJ2', 'ITGB5', 'ITGA9', 'IGSF21', 'AKT1', 'RHOB', 'ARHGAP6', 'ZFHX3', 'CRK', 'GAS6', 'B4GALT1', 'GNAS',
+            'IGF1', 'IL2RA', 'PDGFB', 'CCL4','LIMD1', 'ARNT', 'FOXO3', 'TGFBR2', 'MAP3K5', 'TRPM2', 'SESN1',
+            'ELF2','CRHBP','CH25H','OLFML2B', 'SH3TC1', 'VPS39')
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+expressed_ligands = intersect(ligands,expressed_genes_sender)
+expressed_receptors = intersect(receptors,expressed_genes_receiver)
+potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+ligand_activities = predict_ligand_activities(geneset = geneset, background_expressed_genes = background_expressed_genes, ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+ligand_activities = ligand_activities %>% arrange(-auroc)
+best_upstream_ligands = ligand_activities %>% top_n(5, auroc) %>% arrange(-auroc) %>% pull(test_ligand) %>% unique()
+
+active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset, ligand_target_matrix = ligand_target_matrix, n = 50000) %>% bind_rows() %>% drop_na()
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.2)
+order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>% make.names()
+order_targets = active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links)) %>% make.names()
+
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names() 
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names() 
+vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+p_ligand_target_network = vis_ligand_target %>% 
+  make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "purple", legend_position = "top", x_axis_position = "top",
+                      legend_title = "Regulatory potential")  + theme(axis.text.x = element_text(face = "italic")) + 
+  scale_fill_gradient2(low = "whitesmoke",  high = "purple", breaks = c(0,0.05,0.1))
+
+lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+lr_network_top_matrix = lr_network_top_df %>% dplyr::select(-to) %>% as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+
+dist_receptors = dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+vis_ligand_receptor_network = t(vis_ligand_receptor_network)
+vis_ligand_receptor_network = vis_ligand_receptor_network[order_ligands,]
+vis_ligand_receptor_network = vis_ligand_receptor_network[,c('P2RY14','LRP1','VCAM1','SIGLEC10','ITGAE')]
+p_ligand_receptor_network = vis_ligand_receptor_network %>% make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", x_axis_position = "top",legend_title = "Prior interaction potential")
+
+only_Cancer = subset(sc,celltype == 'Cancer')
+ligand_aupr_matrix = ligand_activities %>% dplyr::select(aupr) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+vis_ligand_aupr = ligand_aupr_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("aupr")
+p_ligand_aupr = vis_ligand_aupr %>% make_heatmap_ggplot("ligands","Ligand activity", color = "orange",
+                                                        legend_position = "top", x_axis_position = "top", 
+                                                        legend_title = "AUPR\n(target gene prediction ability)") + 
+  theme(axis.text.x = element_text(face = "italic")) + scale_fill_gradient2(low = "white",mid = 'white',high = "red")
+
+######## Main figure 5h
+pdf("/github/Figure/Main/Fig5/h_CCI_RTMC_ligand.pdf", width = 16, height = 8)
+p_ligand_aupr + 
+  DotPlot(object = only_Cancer, features = order_ligands,cols="RdYlBu") + scale_size(range = c(3, 10)) + coord_flip()
+dev.off()
+
+target_df = expression_df[order_targets,]
+target_df = t(target_df)
+vis_target_tumor_expression_scaled = target_df %>% scale_quantile()
+p_target_tumor_scaled_expression = vis_target_tumor_expression_scaled  %>% make_threecolor_heatmap_ggplot("Cell type","Target", low_color = color[1],mid_color = 'white', mid = 0.5, high_color = color[100], legend_position = "top", x_axis_position = "top" , legend_title = "Scaled expression\n(averaged over\nsingle cells)") + theme(axis.text.x = element_text(face = "italic"))
+
+######## Main figure 5h
+pdf("/github/Figure/Main/Fig5/h_CCI_RTMC_potential_target.pdf", width = 16, height = 8)
+p_ligand_receptor_network + p_ligand_target_network + p_target_tumor_scaled_expression
+dev.off()
+
+
+gene_ID = mapIds(org.Hs.eg.db, keys = geneset, keytype = "SYMBOL", column="ENTREZID")
+CC = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "CC", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+BP = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "BP", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+MF = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "MF", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+total = CC
+total@result = rbind(CC@result,BP@result,MF@result)
+total@result = total@result[which(total@result$pvalue <= 0.05),]
+total@result = total@result[order(total@result$pvalue),]
+total@result$GeneRatio = gsub('/',':',total@result$GeneRatio)
+total@result$BgRatio = gsub('/',':',total@result$BgRatio)
+test = total@result
+GO_ID = c('positive regulation of cell adhesion', 'regulation of cell-substrate adhesion', 
+          'regulation of cell-cell adhesion', 'cell-matrix adhesion','focal adhesion',
+          'cell chemotaxis', 'leukocyte chemotaxis', 'chemotaxis')
+path_index = c()  
+for(i in 1:length(GO_ID)){
+  path_index = c(path_index,which(total@result$Description == GO_ID[i]))
+}
+total@result = total@result[path_index,]
+total@geneSets = total@geneSets[path_index]
+total@pvalueCutoff = 0.9
+pdf("/github/Figure/Main/Fig5/i_CCI_RTMC_pathway.pdf", width = 16, height = 8)
+treeplot(pairwise_termsim(total),showCategory = 20,group_color = c('tan3','red'),
+         nCluster = 2,color = 'pvalue')
+dev.off()
+
+
+################################ moDC
+## receiver
+receiver = "moDC"
+expressed_genes_receiver = get_expressed_genes(receiver, sc, pct = 0.05)
+background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+## sender
+sender = "Cancer"
+list_expressed_genes_sender = get_expressed_genes(sender, sc, pct = 0.05)
+expressed_genes_sender = list_expressed_genes_sender %>% unlist() %>% unique()
+
+geneset = c('NLRP2', 'CXCR2', 'TMLHE', 'P2RY2', 'S1PR4', 'PTGES2', 'OSBPL11', 'ASCC2', 'ARPC1B', 'CACNA2D3', 
+            'PFDN2','THOC6', 'PRMT2', 'CHD1', 'KIAA0513', 'VARS',  'THBD', 'TTF2', 'CUEDC2', 'HMGB1', 
+            'CSK', 'CNN2', 'AHR', 'CDC123', 'CIC', 'GGCX', 'DCTPP1', 'SPI1', 'FGR')
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+expressed_ligands = intersect(ligands,expressed_genes_sender)
+expressed_receptors = intersect(receptors,expressed_genes_receiver)
+potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+ligand_activities = predict_ligand_activities(geneset = geneset, background_expressed_genes = background_expressed_genes, ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+ligand_activities = ligand_activities %>% arrange(-auroc)
+best_upstream_ligands = ligand_activities %>% top_n(5, auroc) %>% arrange(-auroc) %>% pull(test_ligand) %>% unique()
+
+active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset, ligand_target_matrix = ligand_target_matrix, n = 50000) %>% bind_rows() %>% drop_na()
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.2)
+order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>% make.names()
+order_targets = active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links)) %>% make.names()
+
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names() 
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names() 
+vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+p_ligand_target_network = vis_ligand_target %>% 
+  make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "purple", legend_position = "top", x_axis_position = "top",
+                      legend_title = "Regulatory potential")  + theme(axis.text.x = element_text(face = "italic")) + 
+  scale_fill_gradient2(low = "whitesmoke",  high = "purple", breaks = c(0,0.05,0.1))
+
+lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+lr_network_top_matrix = lr_network_top_df %>% dplyr::select(-to) %>% as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+
+dist_receptors = dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+vis_ligand_receptor_network = t(vis_ligand_receptor_network)
+vis_ligand_receptor_network = vis_ligand_receptor_network[order_ligands,]
+vis_ligand_receptor_network = vis_ligand_receptor_network[,c('IL2RG','FAS','TRAF2','IL1R1','SIGLEC10')]
+p_ligand_receptor_network = vis_ligand_receptor_network %>% make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", x_axis_position = "top",legend_title = "Prior interaction potential")
+
+only_Cancer = subset(sc,celltype == 'Cancer')
+ligand_aupr_matrix = ligand_activities %>% dplyr::select(aupr) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+vis_ligand_aupr = ligand_aupr_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("aupr")
+p_ligand_aupr = vis_ligand_aupr %>% make_heatmap_ggplot("ligands","Ligand activity", color = "orange",
+                                                        legend_position = "top", x_axis_position = "top", 
+                                                        legend_title = "AUPR\n(target gene prediction ability)") + 
+  theme(axis.text.x = element_text(face = "italic")) + scale_fill_gradient2(low = "white",mid = 'white',high = "red")
+
+######## Main figure 5f
+pdf("/github/Figure/Supple/Fig5/e_CCI_moDC_ligand.pdf", width = 16, height = 8)
+p_ligand_aupr + 
+  DotPlot(object = only_Cancer, features = order_ligands,cols="RdYlBu") + scale_size(range = c(3, 10)) + coord_flip()
+dev.off()
+
+target_df = expression_df[order_targets,]
+target_df = t(target_df)
+vis_target_tumor_expression_scaled = target_df %>% scale_quantile()
+p_target_tumor_scaled_expression = vis_target_tumor_expression_scaled  %>% make_threecolor_heatmap_ggplot("Cell type","Target", low_color = color[1],mid_color = 'white', mid = 0.5, high_color = color[100], legend_position = "top", x_axis_position = "top" , legend_title = "Scaled expression\n(averaged over\nsingle cells)") + theme(axis.text.x = element_text(face = "italic"))
+
+######## Main figure 5f
+pdf("/github/Figure/Supple/Fig5/e_CCI_moDC_potential_target.pdf", width = 16, height = 8)
+p_ligand_receptor_network + p_ligand_target_network + p_target_tumor_scaled_expression
+dev.off()
+
+
+gene_ID = mapIds(org.Hs.eg.db, keys = geneset, keytype = "SYMBOL", column="ENTREZID")
+CC = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "CC", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+BP = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "BP", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+MF = enrichGO(gene = as.vector(gene_ID),OrgDb = org.Hs.eg.db,ont = "MF", pAdjustMethod = "BH",pvalueCutoff  = 0.05,readable = TRUE)
+total = CC
+total@result = rbind(CC@result,BP@result,MF@result)
+total@result = total@result[which(total@result$pvalue <= 0.05),]
+total@result = total@result[order(total@result$pvalue),]
+total@result$GeneRatio = gsub('/',':',total@result$GeneRatio)
+total@result$BgRatio = gsub('/',':',total@result$BgRatio)
+test = total@result
+GO_ID = c('negative regulation of phagocytosis', 'negative regulation of endocytosis',
+          'negative regulation of immune effector process', 'negative regulation of immune response',
+          'negative regulation of cytokine production involved in immune response', 'negative regulation of T cell mediated immunity', 
+          'negative regulation of myeloid leukocyte mediated immunity', 'negative regulation of inflammatory response')
+path_index = c()  
+for(i in 1:length(GO_ID)){
+  path_index = c(path_index,which(total@result$Description == GO_ID[i]))
+}
+total@result = total@result[path_index,]
+total@geneSets = total@geneSets[path_index]
+total@pvalueCutoff = 0.9
+pdf("/github/Figure/Supple/Fig5/f_CCI_moDC_pathway.pdf", width = 16, height = 8)
+treeplot(pairwise_termsim(total),showCategory = 20,
+         nCluster = 3,color = 'pvalue',group_color = c('deepskyblue', 'lightblue','steelblue1'))
+dev.off()

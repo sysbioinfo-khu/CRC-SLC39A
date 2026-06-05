@@ -1,0 +1,82 @@
+library(ggplot2)
+library(Ternary)
+
+CMS = read.csv('/github/model_data/TCGA/CMS/coad_cms.csv', header = T, row.names = 1)
+arc = read.csv('/github/model_data/Archetype/arc_data.csv', header = T, row.names = 1)
+tpm = read.csv('/github/model_data/TCGA/COAD_tpm.csv', header = T, row.names = 1)
+xcell_score = read.csv('/github/model_data/TCGA/xcell/xcell.csv', header = T, row.names = 1)
+arcpos = read.csv('/github/model_data/Archetype/arc_position.csv', header = T, row.names = 1)
+MOFAobject.trained = readRDS('/github/model_data/MOFA/MOFA_model.rds')
+
+factor_score = MOFAobject.trained@expectations$Z$group1
+factor_score = data.frame(factor_score)
+factor_score = factor_score[,c(1:4)]
+factor_score[,'CMS'] = CMS[rownames(factor_score),'prediction']
+factor_score[is.na(factor_score[,'CMS']),'CMS'] = 'NA'
+
+######## Main figure 1d (left)
+pdf("/github/Figure/Main/Fig1/c_ggplot_overview.pdf", width = 8, height = 6)
+ggplot(factor_score[-which(factor_score$CMS == 'NA'),],aes(x=Factor1,y=Factor4,color = CMS)) + geom_point(cex=7) + 
+  geom_segment(data= data.frame(t(arcpos)), aes(x=unlist(arcpos[1,]), xend=unlist(arcpos[1,c(2,3,1)]) , 
+                                                y=unlist(arcpos[2,]),yend=unlist(arcpos[2,c(2,3,1)])),col="lightblue",cex=2 ) + 
+  geom_point(data=data.frame(t(arcpos)),col=alpha(c("#B81330","#58839D", "#79A960"),1),cex=8) + 
+  geom_text(data=data.frame(t(arcpos)),label=1:3,col="black",cex=8) + theme_classic() +
+  scale_color_manual(values = c("CMS1" = "Forestgreen","CMS2" = "red2","CMS3" = "yellow","CMS4" = "dodger blue",'NA' = 'grey90'))
+dev.off()
+
+
+######## Main figure 1d (right)
+arc[,'CMS'] = CMS[rownames(arc),'prediction']
+arc[,'ImmuneScore'] = xcell_score[rownames(arc),'ImmuneScore']
+colnames(arc) = c('Arc1','Arc2','Arc3','sample','CMS','ImmuneScore')
+
+coord.V = rbind(c(-0.5,0),c(0,0.86),c(0.5,0))
+arc.simplexcoord = t( sapply(1:nrow(arc), function(i) arc[i,]$Arc1*coord.V[1,] + arc[i,]$Arc2*coord.V[2,] + arc[i,]$Arc3*coord.V[3,]))
+denshighhypo = TernaryDensity(arc %>% dplyr::select(Arc2,Arc3,Arc1),resolution = 48L, direction = getOption("ternDirection",1L)) # just used to get coordinates
+denshigh.cols = data.frame(ImmuneScore = rep(NA,ncol(denshighhypo)))
+for(i in 1:ncol(denshighhypo)){
+  wtmp = exp( -((arc.simplexcoord[,1]- as.numeric(denshighhypo[1,i]) )**2+(arc.simplexcoord[,2]- as.numeric(denshighhypo[2,i]))**2)/2/0.1**2 ) # compute gaussian kernel
+  denshigh.cols$ImmuneScore[i] = sum(wtmp*arc$ImmuneScore,na.rm=T)/sum(wtmp)
+}
+colfunc.bg = colorRampPalette(c('red',"white",'royalblue')) #red - blue/green
+denshigh.cols$ImmuneScore.col = rev(colfunc.bg(21))[round( (denshigh.cols$ImmuneScore-min(denshigh.cols$ImmuneScore))/(max(denshigh.cols$ImmuneScore)-min(denshigh.cols$ImmuneScore))*20 )+1]
+colors_clin1 = c(CMS1='Forestgreen',CMS2='red2',CMS3 = 'yellow',CMS4 = 'dodger blue')
+denshighhypo[3,] = denshigh.cols$ImmuneScore.col
+
+pdf("/github/Figure/Main/Fig1/c_Ternaryplot_overview.pdf", width = 16, height = 8)
+TernaryPlot(point = "up", 
+            lab.cex = 0.8, grid.minor.lines = 0,
+            grid.lines = 5,
+            lab.offset = 0.18,
+            grid.lty = 'solid', col = rgb(0.9, 0.9, 0.9), grid.col = 'white', 
+            axis.col = rgb(0.6, 0.6, 0.6), ticks.col = rgb(0.6, 0.6, 0.6),
+            axis.rotate = FALSE,
+            padding = 0.12,  axis.labels = F, axis.tick = F)
+ColourTernary(denshighhypo, spectrum = NULL,direction = 1)
+TernaryLines(list(c(0, 255, 0), rep(50,3)), col = 'grey')
+TernaryLines(list(c(0, 0, 255), rep(50,3)), col = 'grey')
+TernaryLines(list(c(255, 0, 0), rep(50,3)), col = 'grey')
+col_fill = alpha(colors_clin1[arc$CMS],0.7)
+col_line = rep("white",258)
+names(col_line) = arc$CMS
+col_line[which(is.na(names(col_line)))] = NA
+AddToTernary(points,arc[,c(2,3,1)], pch = 21, cex = 2.5, bg = col_fill,col = col_line,lty = 'dotted') 
+data_points = list("A1" = c(0, 0, 255),"A2" = c(255, 0, 0),"A3" = c(0, 255, 0))
+xy = CoordinatesToXY(data_points)
+points(xy[1, ] + c(-sqrt(0.1**2/2),0,sqrt(0.1**2/2)), xy[2, ]+c(-sqrt(0.1**2/2),0.1,-sqrt(0.1**2/2)), pch = 19, cex = 5, col = alpha(c("red2","dodger blue", "Forestgreen"),0.7))
+text(xy[1, ] + c(-sqrt(0.1**2/2),0,sqrt(0.1**2/2)), xy[2, ]+c(-sqrt(0.1**2/2),0.1,-sqrt(0.1**2/2)), names(data_points), cex = 0.8, font = 2)
+dev.off()
+
+pdf("/github/Figure/Main/Fig1/c_Ternaryplot_overview_legend1.pdf", width = 16, height = 8)
+l1 = get_legend(ggplot(denshigh.cols, aes(x = ImmuneScore, y = 1, fill = ImmuneScore)) + 
+                  geom_tile(aes(fill = ImmuneScore), colour = "grey") + 
+                  scale_fill_gradient2(low = "royalblue", mid = "white", high = "red", midpoint = mean(denshigh.cols$ImmuneScore[which(denshigh.cols$ImmuneScore.col == "#FFFFFF")]), name = "ImmuneScore score"))
+plot_grid(l1)
+dev.off()
+
+pdf("/github/Figure/Main/Fig1/c_Ternaryplot_overview_legend2.pdf", width = 16, height = 8)
+l2 = get_legend(ggplot(arc[-which(is.na(arc$CMS)),], aes(x = Arc1, y = Arc2, fill = CMS)) + 
+                  geom_tile(aes(fill = CMS), colour = "grey") +
+                  scale_fill_manual(values = c("Forestgreen", "red2", "yellow", "dodger blue")))
+plot_grid(l2)
+dev.off()

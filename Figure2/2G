@@ -1,0 +1,60 @@
+library(dplyr)
+library(tidyr)
+
+
+KA = read.table('/github/model_data/CPTAC/KSTAR/kstar_normalized_aggregate_activity.tsv', header = T, sep = '\t')
+KA = KA %>% mutate(data = sub("^data:", "", data))
+KA = KA %>% dplyr::select(data, KSTAR_KINASE, median_normalized_activity) %>% pivot_wider(names_from = data, values_from = median_normalized_activity)
+KA = as.data.frame(KA)
+rownames(KA) = KA$KSTAR_KINASE
+KA = KA[,-1]  
+colnames(KA) = paste0('X',colnames(KA))
+rsem = read.csv('/github/model_data/CPTAC/rsem.txt', sep = '\t', header = T, row.names = 1)
+phospho = read.csv('/github/model_data/CPTAC/phosphoproteom.txt', sep = '\t', header = T, row.names = 1)
+PA = read.csv('/github/model_data/CPTAC/coad_protein_activity.csv', header = T, row.names = 1)
+geneset = list()
+geneset[[1]] = c('SLC39A1', 'SLC39A2', 'SLC39A3', 'SLC39A4', 'SLC39A5', 'SLC39A6', 'SLC39A8', 'SLC39A10', 'SLC39A14')
+names(geneset) = c('Zinc.influx.by.SLC39')
+pathway = gsvaParam(exprData = data.matrix(rsem),geneSets = geneset)
+KA = data.frame(t(KA))
+pathway = gsva(pathway)
+pathway_res = data.frame(t(pathway))
+rsem = data.frame(t(rsem))
+phospho = data.frame(t(phospho))
+PA = data.frame(t(PA))
+sample = intersect(rownames(rsem),rownames(phospho))
+plot_data = data.frame('Zinc.influx.by.SLC39' = pathway_res[sample,'Zinc.influx.by.SLC39'], 'CDX2PA' = PA[sample,'CDX2'], 
+                       'CDX2' = rsem[sample,'CDX2'], 'CD24' = rsem[sample,'CD24'], 'CDX2S176' = phospho[sample,'CDX2_S176__Q99626.S176'])
+
+######## Main figure 2g
+pdf("/github/Figure/Main/Fig2/g_CDX2_s176.pdf", width = 14, height = 6)
+ggscatter(plot_data, x = 'Zinc.influx.by.SLC39', y = 'CDX2S176', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+               conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5)) +
+  ggscatter(plot_data, x = 'CDX2PA', y = 'CDX2S176', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+               conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5)) + 
+  ggscatter(plot_data, x = 'CD24', y = 'CDX2S176', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+               conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5))
+dev.off()
+
+sample = intersect(rownames(phospho),rownames(KA))
+plot_df = data.frame('Zinc.influx.by.SLC39' = pathway_res[sample,'Zinc.influx.by.SLC39'],
+                     'CDX2_S176_phospho' = phospho[sample,'CDX2_S176__Q99626.S176'],
+                     KA[sample,c('MAP2K2','PRKCE','PRKDC','CAMK1D')])
+
+
+######## Supple figure 2e
+pdf("/github/Figure/Supple/Fig2/e_kinase_CDX2_S176.pdf", width = 30, height = 6)
+p1 = ggscatter(plot_df, x = 'Zinc.influx.by.SLC39', y = 'MAP2K2', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+               conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5, label.x = -0.4, label.y = 0.09)) +
+  ggscatter(plot_df, x = 'CDX2_S176_phospho', y = 'MAP2K2', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+            conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5, label.x = -0.25, label.y = 0.09))
+p2 = ggscatter(plot_df, x = 'Zinc.influx.by.SLC39', y = 'PRKCE', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+               conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5, label.x = -0.4, label.y = 0.1)) +
+  ggscatter(plot_df, x = 'CDX2_S176_phospho', y = 'PRKCE', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+            conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5, label.x = -0.25, label.y = 0.1))
+p3 = ggscatter(plot_df, x = 'Zinc.influx.by.SLC39', y = 'PRKDC', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+               conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5, label.x = -0.4, label.y = 0.125)) +
+  ggscatter(plot_df, x = 'CDX2_S176_phospho', y = 'PRKDC', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+            conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.sep = "\n",size = 4.5, label.x = -0.25, label.y = 0.125))
+ggarrange(p1, p2, p3, ncol = 3, nrow = 1)
+dev.off()

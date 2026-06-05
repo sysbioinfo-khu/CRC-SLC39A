@@ -1,0 +1,147 @@
+library(ggExtra)
+options(future.globals.maxSize = 8000 * 1024^3)
+
+data = Read10X('/github/singlecell_data/ICI/only_Cancer/expression_epi_counts/')
+sc = CreateSeuratObject(data)
+meta = fread('/github/singlecell_data/ICI/only_Cancer/metadata/epi_metadata.txt', sep = '\t',header = T)
+meta = data.frame(meta)
+meta = meta[-1,]
+meta = meta[,c('biosample_id','donor_id','sampleID','specimenID','patientID','treatment','tissueSite',
+               'response','pctChange','MMRstatus','RECIST','PFSmo','resp_tx')]
+sc = AddMetaData(object = sc,metadata = meta)
+
+sc[["percent.mt"]] = PercentageFeatureSet(sc, pattern = "MT")
+sc = subset(sc, treatment == 'Pre')
+sc = subset(sc, subset = nFeature_RNA > 200 & nCount_RNA < 100000  & percent.mt < 60)
+sc = NormalizeData(sc)
+all.genes = rownames(sc)
+sc = ScaleData(sc, features = all.genes)
+sc = FindVariableFeatures(sc, selection.method = "vst", nfeatures = 2000)
+sc = RunPCA(sc, features = VariableFeatures(object = sc))
+sc = FindNeighbors(sc, dims = 1:10,reduction = 'pca')
+sc = FindClusters(sc, resolution = 0.5)
+sc = RunUMAP(sc,dims = 1:10, reduction = 'pca')
+
+
+coad_regulon = readRDS('/github/model_data/Viper/COAD_regulon.rds')
+index = grep('CDX2',names(coad_regulon))
+coad_regulon = coad_regulon[index]
+viper_res = viper(data, coad_regulon)
+rownames(viper_res) = paste0('protein_',rownames(viper_res))
+
+sc@meta.data[,'CDX2PA'] = as.vector(viper_res[1,])
+sc@meta.data[,'Zinc.influx.by.SLC39'] = as.vector(scRep_example@assays$escape.ssGSEA$data)
+sc@meta.data[,'PFSmo'] = as.numeric(sc@meta.data[,'PFSmo'])
+sc@meta.data[,'PFStype'] = NA
+sc@meta.data[which(sc@meta.data$PFSmo <= 6),'PFStype'] = 'low'
+sc@meta.data[which(sc@meta.data$PFSmo >= 6 & sc@meta.data$PFSmo <= 100),'PFStype'] = 'high'
+sc@meta.data[which(sc@meta.data$PFSmo > 100),'PFStype'] = 'Unknown'
+sc@meta.data[,'PFS<6'] = sc@meta.data[,'PFStype']
+sc@meta.data[which(sc@meta.data[,'PFS<6'] == 'low'),'PFS<6'] = 'yes'
+sc@meta.data[which(sc@meta.data[,'PFS<6'] == 'high'),'PFS<6'] = 'no'
+
+sc = AddModuleScore(object = sc, features = list(c('SLC39A1', 'SLC39A2', 'SLC39A3', 'SLC39A4', 'SLC39A5', 
+                                                   'SLC39A6', 'SLC39A8', 'SLC39A10', 'SLC39A14')), name = 'Zinc_module')
+#qsave(sc,'/github/singlecell_data/ICI/only_Cancer/ICI_processed_data.qs')
+
+rna_data = sc@assays$RNA$scale.data
+rna_data = rna_data[c('CDX2','CD24'),]
+rna_data = rbind(rna_data,sc@meta.data$CDX2PA)
+rna_data = rbind(rna_data,sc@meta.data$Zinc_module1)
+rownames(rna_data) = c('CDX2','CD24','CDX2PA','Zinc.module')
+rna_data = data.frame(t(rna_data))
+rna_data[,'Response'] = sc@meta.data$response
+rna_data[,'PFSmo'] = sc@meta.data$PFSmo
+rna_data[,'PFStype'] = sc@meta.data$PFStype
+rna_data[which(rna_data$PFStype == 'low'),'PFStype'] = 'yes'
+rna_data[which(rna_data$PFStype == 'high'),'PFStype'] = 'no'
+rna_data$Response = factor(rna_data$Response, levels = c("NR", "R"))
+
+######## Main figure 4h
+p1 = ggplot(rna_data, aes(x = Zinc.module, fill = Response, colour = Response,alpha=0.4)) +
+  geom_point(aes(y = 0.1), alpha = 0) + 
+  geom_density(alpha = 0.7) +
+  theme_classic() + labs(x="Response", y="Zinc influx by SLC39", fill = 'Response') + 
+  scale_fill_manual(values = c('R' = 'grey90', 'NR' = 'cyan3')) +
+  scale_colour_manual(values = c('R' = 'grey90', 'NR' = 'cyan3')) 
+p1 = p1 %>% ggMarginal(type = "boxplot", margins = "x", groupColour = TRUE,groupFill = TRUE) 
+
+p2 = ggplot(rna_data, aes(x = CDX2, fill = Response, colour = Response,alpha=0.4)) +
+  geom_point(aes(y = 0.1), alpha = 0) + 
+  geom_density(alpha = 0.7) +
+  theme_classic() + labs(x="Response", y="CDX2 expression", fill = 'Response') + 
+  scale_fill_manual(values = c('R' = 'grey90', 'NR' = 'cyan3')) +
+  scale_colour_manual(values = c('R' = 'grey90', 'NR' = 'cyan3')) 
+p2 = p2 %>% ggMarginal(type = "boxplot", margins = "x", groupColour = TRUE,groupFill = TRUE) 
+
+p3 = ggplot(rna_data, aes(x = CDX2PA, fill = Response, colour = Response,alpha=0.4)) +
+  geom_point(aes(y = 0.1), alpha = 0) + 
+  geom_density(alpha = 0.7) +
+  theme_classic() + labs(x="Response", y="CDX2 protein activity", fill = 'Response') + 
+  scale_fill_manual(values = c('R' = 'grey90', 'NR' = 'cyan3')) +
+  scale_colour_manual(values = c('R' = 'grey90', 'NR' = 'cyan3')) 
+p3 = p3 %>% ggMarginal(type = "boxplot", margins = "x", groupColour = TRUE,groupFill = TRUE) 
+
+p4 = ggplot(rna_data, aes(x = CD24, fill = Response, colour = Response,alpha=0.4)) +
+  geom_point(aes(y = 0.1), alpha = 0) + 
+  geom_density(alpha = 0.7) +
+  theme_classic() + labs(x="Response", y="CD24 expression", fill = 'Response') + 
+  scale_fill_manual(values = c('R' = 'grey90', 'NR' = 'cyan3')) +
+  scale_colour_manual(values = c('R' = 'grey90', 'NR' = 'cyan3')) 
+p4 = p4 %>% ggMarginal(type = "boxplot", margins = "x", groupColour = TRUE,groupFill = TRUE) 
+
+pdf("/github/Figure/Main/Fig4/h_ICI_response_density_boxplot.pdf", width = 12, height = 8)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+dev.off()
+
+######## Main figure 4i
+rna_data = rna_data[-(which(rna_data$PFStype == 'Unknown')),]
+rna_data$PFStype = factor(rna_data$PFStype, levels = c("yes", "no"))
+p1 = ggplot(rna_data, aes(x = Zinc.module, fill = PFStype, colour = PFStype,alpha=0.4)) +
+  geom_point(aes(y = 0.1), alpha = 0) + 
+  geom_density(alpha = 0.7) +
+  theme_classic() + labs(x="PFStype", y="Zinc influx by SLC39", fill = 'PFS < 6 months', colour = 'PFS < 6 months') + 
+  scale_fill_manual(values = c('no' = 'grey90', 'yes' = 'purple')) +
+  scale_colour_manual(values = c('no' = 'grey90', 'yes' = 'purple')) 
+p1 = p1 %>% ggMarginal(type = "boxplot", margins = "x", groupColour = TRUE,groupFill = TRUE) 
+
+p2 = ggplot(rna_data, aes(x = CDX2, fill = PFStype, colour = PFStype,alpha=0.4)) +
+  geom_point(aes(y = 0.1), alpha = 0) + 
+  geom_density(alpha = 0.7) +
+  theme_classic() + labs(x="PFStype", y="CDX2 expression", fill = 'PFS < 6 months', colour = 'PFS < 6 months') + 
+  scale_fill_manual(values = c('no' = 'grey90', 'yes' = 'purple')) +
+  scale_colour_manual(values = c('no' = 'grey90', 'yes' = 'purple')) 
+p2 = p2 %>% ggMarginal(type = "boxplot", margins = "x", groupColour = TRUE,groupFill = TRUE) 
+
+p3 = ggplot(rna_data, aes(x = CDX2PA, fill = PFStype, colour = PFStype,alpha=0.4)) +
+  geom_point(aes(y = 0.1), alpha = 0) + 
+  geom_density(alpha = 0.7) +
+  theme_classic() + labs(x="PFStype", y="CDX2 protein activity", fill = 'PFS < 6 months', colour = 'PFS < 6 months') + 
+  scale_fill_manual(values = c('no' = 'grey90', 'yes' = 'purple')) +
+  scale_colour_manual(values = c('no' = 'grey90', 'yes' = 'purple')) 
+p3 = p3 %>% ggMarginal(type = "boxplot", margins = "x", groupColour = TRUE,groupFill = TRUE) 
+
+p4 = ggplot(rna_data, aes(x = CD24, fill = PFStype, colour = PFStype,alpha=0.4)) +
+  geom_point(aes(y = 0.1), alpha = 0) + 
+  geom_density(alpha = 0.7) +
+  theme_classic() + labs(x="PFStype", y="CD24 expression", fill = 'PFS < 6 months', colour = 'PFS < 6 months') + 
+  scale_fill_manual(values = c('no' = 'grey90', 'yes' = 'purple')) +
+  scale_colour_manual(values = c('no' = 'grey90', 'yes' = 'purple')) 
+p4 = p4 %>% ggMarginal(type = "boxplot", margins = "x", groupColour = TRUE,groupFill = TRUE) 
+
+pdf("/github/Figure/Main/Fig4/i_ICI_PFS_density_boxplot.pdf", width = 12, height = 8)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+dev.off()
+
+
+
+
+
+pdf("/github/Figure/Main/Fig4/ik_ICI_Dimplot.pdf", width = 16, height = 8)
+DimPlot(sc, reduction = "umap", group.by = 'response',cols = c("cyan3", "grey90")) +
+  DimPlot(sc, reduction = "umap", group.by = 'PFS<6',cols = c("grey90", "white", 'purple'))
+dev.off()
+png("/github/Figure/Main/Fig4/ik_ICI_Dimplot.png", width = 1600, height = 800, res = 200)
+DimPlot(sc, reduction = "umap", group.by = 'response',cols = c("cyan3", "grey90")) +
+  DimPlot(sc, reduction = "umap", group.by = 'PFS<6',cols = c("grey90", "white", 'purple'))
+dev.off()

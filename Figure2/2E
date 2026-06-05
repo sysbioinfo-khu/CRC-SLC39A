@@ -1,0 +1,45 @@
+library(GSVA)
+library(readxl)
+
+RNA = read.csv('/github/model_data/TCGA/COAD_tpm.csv', header = T, row.names = 1)
+geneset = list()
+geneset[[1]] = c('SLC39A1','SLC39A2','SLC39A3','SLC39A4','SLC39A5','SLC39A6','SLC39A8','SLC39A10','SLC39A14')
+names(geneset) = c('Zinc_SLC39')
+pathway = gsvaParam(exprData = data.matrix(RNA),geneSets = geneset)
+pathway = gsva(pathway)
+ATAC = readRDS('/github/model_data/TCGA/ATAC/TCGA_ATAC_data.rds')
+PRO = read.csv('/github/model_data/Viper/coad_protein_activity.csv', header = T, row.names = 1)
+colnames(ATAC) = substr(colnames(ATAC),1,nchar(colnames(ATAC)) -1)
+colnames(ATAC) = gsub('-','.',colnames(ATAC))
+sample = intersect(colnames(ATAC),colnames(RNA))
+ATAC = cbind(ATAC[,1:7],ATAC[,sample])
+ATAC_df = data.frame(t(ATAC[,8:32]))
+RNA = data.frame(t(RNA[,sample]))  
+PRO = data.frame(t(PRO[,sample]))
+Pathway = pathway[,sample]
+data = cbind(ATAC_df[,'KIRP_51498'],as.numeric(Pathway),RNA[,c('CDX2','CD24')],PRO[,c('CDX2')])
+colnames(data) = c('KIRP_51498','Zinc_SLC39','CDX2','CD24','CDX2PA')
+nor_sd = function(x){
+  result = (x - mean(x)) / sd(x)
+  return(result)
+}
+data = data.frame(apply(data,2,nor_sd))
+
+
+
+######## Main figure 2c
+pdf("/github/Figure/Main/Fig2/e_TCGA_ATAC.pdf", width = 8, height = 16)
+p1 = ggscatter(data, x = 'Zinc_SLC39', y = 'KIRP_51498', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+              conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.x = 0, label.y = 1,label.sep = "\n",size = 6),
+              xlab="Zinc influx by SLC39", ylab="chr6: 106781147~106781648")  +  font("xlab", size = 20) + font("ylab", size = 20)
+p2 = ggscatter(data, x = 'CDX2', y = 'KIRP_51498', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+              conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.x = -1, label.y = 1.5,label.sep = "\n",size = 6),
+              xlab="CDX2", ylab="chr6: 106781147~106781648")  +  font("xlab", size = 20) + font("ylab", size = 20)  
+p3 = ggscatter(data, x = 'CDX2PA', y = 'KIRP_51498', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+              conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.x = -1, label.y = 1.1,label.sep = "\n",size = 6),
+              xlab="CDX2 activity", ylab="chr6: 106781147~106781648")  +  font("xlab", size = 20) + font("ylab", size = 20) 
+p4 = ggscatter(data, x = 'CD24', y = 'KIRP_51498', add = 'reg.line', add.params = list(color = 'red',fill = 'grey'),
+              conf.int = T, cor.method = 'pearson',cor.coef = T,  cor.coeff.args = list(label.x = 0, label.y = 1.5,label.sep = "\n",size = 6),
+              xlab="CD24", ylab="chr6: 106781147~106781648")  +  font("xlab", size = 20) + font("ylab", size = 20)
+ggarrange(p1, p2, p3, p4, ncol = 1, nrow = 4)
+dev.off()

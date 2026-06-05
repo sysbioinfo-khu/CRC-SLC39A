@@ -1,0 +1,107 @@
+library(MethReg)
+library(TFBSTools)
+library(org.Hs.eg.db)
+library(AnnotationDbi)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(ggseqlogo)
+
+Jasper = readRDS('/github/model_data/Jaspar/JASPAR2022_matrix.rds')
+tmp_func = function(
+    region,
+    window.size = 0,
+    genome = c("hg38"),
+    p.cutoff = 1e-8,
+    TF.peaks.gr = NULL,
+    verbose = FALSE
+) {
+  if (is(region,"character") | is(region,"factor")) {
+    region.gr = make_granges_from_names(region)
+    region.names = region
+  } else if (is(region,"GenomicRanges")) {
+    region.gr = region
+    region.names = make_names_from_granges(region)
+  }
+  region.gr = region.gr + (window.size/2)
+  # region = region.gr %>% resize(width(.) + window.size, fix = "center")
+  genome = match.arg(genome)
+  if (is.null(TF.peaks.gr)) {
+    if (min(IRanges::width(region.gr)) < 8) {
+      stop("Minimun region size is 8, please set window.size argument")
+    }
+    opts = list()
+    # opts[["species"]] = 9606 # homo sapiens
+    opts[["all_versions"]] = TRUE
+    PFMatrixList = Jasper
+    motifs.names = lapply(PFMatrixList, function(x)(TFBSTools::name(x)))
+    names(PFMatrixList) = motifs.names
+    PFMatrixList = PFMatrixList[grep("::|var",motifs.names,invert = TRUE)]
+    if(verbose)  message("Evaluating ", length(PFMatrixList), " JASPAR Human TF motifs")
+    if(verbose)  message("This may take a while...")
+    suppressWarnings({
+      motif.matrix = motifmatchr::matchMotifs(
+        pwms = PFMatrixList,
+        subject = region.gr,
+        genome = genome,
+        p.cutoff = p.cutoff
+      ) %>% SummarizedExperiment::assay()
+    })
+    rownames(motif.matrix) = region.names
+    # remove motifs not found in any regions
+    motif.matrix = motif.matrix[,DelayedArray::colSums(motif.matrix) > 0, drop = FALSE]
+    if (ncol(motif.matrix) == 0) {
+      message("No motifs found")
+      return(NULL)
+    }
+    if (is(motif.matrix, "lgCMatrix")) {
+      motif.matrix = motif.matrix[!duplicated(rownames(motif.matrix)),, drop = FALSE]
+      motif.matrix = motif.matrix %>% as.matrix() %>% as.data.frame()
+    }
+    if(verbose)  message("Preparing output")
+    motifs.probes.df = plyr::alply(
+      colnames(motif.matrix),
+      .margins = 1,
+      function(colum.name){
+        colum = motif.matrix[,colum.name, drop = FALSE]
+        regions = rownames(colum)[which(colum %>% pull > 0)];
+        tfs = colum.name
+        expand.grid(regions,tfs,stringsAsFactors = FALSE)
+      }, .progress = "time")
+    motifs.probes.df = dplyr::bind_rows(motifs.probes.df)
+    colnames(motifs.probes.df) = c("regionID","TF_symbol")
+    motifs.probes.df = motifs.probes.df %>% na.omit
+  } else {
+    hits = findOverlaps(TF.peaks.gr, region.gr, ignore.strand = TRUE)
+    motifs.probes.df = data.frame(
+      "regionID" = region.names[subjectHits(hits)],
+      "TF_symbol" = TF.peaks.gr$id[queryHits(hits)]
+    )
+  }
+  return(motifs.probes.df %>% unique)
+}
+tmp_res = get_tf_in_region(
+  c('chr6:106781147-106781648'),
+  window.size = 0,
+  genome = c("hg38"),
+  p.cutoff = 5e-03,
+  cores = 1,
+)
+pfm = TFBSTools::getMatrixSet(JASPAR2022::JASPAR2022, opts = list(ID = c("MA0465.1")))
+pwm = toPWM(pfm)
+subject = getSeq(BSgenome.Hsapiens.UCSC.hg38, "chr6", 106781147, 106781648)
+siteset = searchSeq(pwm, subject, seqname="seq1", min.score="80%", strand="*")
+writeGFF3(siteset)
+pvalues(siteset, type="TFMPvalue") 
+
+GH = as.character(subject)
+CDX2_motif = t(data.frame(c(613,	665,	308,	0,	697,	1597,	0,	1597,	1597,	1597,	1013),
+                          c(319,	8,	136,	1048,	832,	0,	0,	0,	0,	0,	150),
+                          c(480,	502, 1153,	0,	0,	0,	0,	0,	0,	0,	313),
+                          c(185,	422,	0,	549,	68,	0,	1597,	0,	0,	0,	121)))
+rownames(CDX2_motif) = c('A','C','G','T')
+
+######## Main figure 2f
+pdf("/github/Figure/Main/Fig2/f_Enhancer_motif.pdf", width = 6, height = 3)
+ggseqlogo(CDX2_motif) + ggtitle("CDX2") +
+  ggseqlogo(substr(GH, 481, 491)) + ggtitle("CDX2 enhancer")
+dev.off()
+

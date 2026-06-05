@@ -1,0 +1,208 @@
+library(circlize)
+library(ggplot2)
+library(ggalluvial)
+library(singleseqgset)
+library(DESeq2)
+library(Seurat)
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+library(CMScaller)
+library(reshape2)
+library(DWLS)
+library(presto)
+
+sc = qread('/github/singlecell_data/SG/data/SG_processed_data.qs')
+Cancer = subset(sc, celltype == 'Cancer')
+CMS = data.frame('sample' = colnames(Cancer),'scCMS' = Cancer$scCMS1)
+subtype1 = read.table('/github/singlecell_data/SG/data/Cancer/Cancer_Terminal1.txt',sep = '\t')
+subtype2 = read.table('/github/singlecell_data/SG/data/Cancer/Cancer_Terminal2.txt',sep = '\t')
+subtype3 = read.table('/github/singlecell_data/SG/data/Cancer/Cancer_Terminal3.txt',sep = '\t')
+subtype1 = subtype1[,1]
+subtype2 = subtype2[,1]
+subtype3 = subtype3[,1]
+dupl_sample = intersect(subtype1,subtype3)
+subtype1 = subtype1[-which(subtype1 %in% dupl_sample)]
+subtype3 = subtype3[-which(subtype3 %in% dupl_sample)]
+subtype_info = data.frame('sample' = c(subtype1,subtype2,subtype3),'Terminal' = 'Terminal3')
+subtype_info$Terminal[1:343] = 'Terminal1'
+subtype_info$Terminal[344:2766] = 'Terminal2'
+df = left_join(CMS,subtype_info,by = 'sample')
+df$Terminal[which(is.na(df$Terminal))] = 'Unknown'
+Cancer@meta.data[,'terminal'] = df$Terminal
+circos_df = table(df$scCMS, df$Terminal)
+circos_df = circos_df[-5,-4]
+circos_df = reshape2::melt(circos_df)
+
+
+######## Supple figure 4b
+pdf("/github/Figure/Supple/Fig4/b_circosplot.pdf", width = 16, height = 8)
+chordDiagram(circos_df)
+dev.off()
+
+
+GG_data = data.frame('SLC39' = Cancer$Zinc.SLC39,'CDX2' = Cancer@assays$RNA$scale.data['CDX2',],'CDX2PA' = Cancer$CDX2PA,
+                     'CD24' = Cancer@assays$RNA$scale.data['CD24',], 'Terminal' = Cancer$terminal)
+GG_data = GG_data[-which(GG_data$Terminal == 'Unknown'),]
+compare = list( c("Terminal1", "Terminal2"), c("Terminal2", "Terminal3"), c("Terminal1", "Terminal3") )
+######## Main figure 4b
+pdf("/github/Figure/Main/Fig4/b_Terminal_Vlnplot.pdf", width = 16, height = 4)
+p1 = ggplot(GG_data, aes(x=Terminal, y=SLC39, fill=Terminal)) + 
+  geom_violin(trim=FALSE)+
+  geom_boxplot(width=0.1, fill="white")+
+  labs(title="Zinc influx by SLC39",x="", y = "Expression")  + 
+  theme_classic() + scale_fill_manual(values = c("red3", "royalblue1", "palegreen4")) + 
+  stat_compare_means(comparisons = compare,label.y = c(15000, 16500, 18000))
+p2 = ggplot(GG_data, aes(x=Terminal, y=CDX2, fill=Terminal)) + 
+  geom_violin(trim=FALSE)+
+  geom_boxplot(width=0.1, fill="white")+
+  labs(title="CDX2 expression",x="", y = "Expression")  + 
+  theme_classic() + scale_fill_manual(values = c("red3", "royalblue1", "palegreen4")) + 
+  stat_compare_means(comparisons = compare,label.y = c(9, 10.5, 12))
+p3 = ggplot(GG_data, aes(x=Terminal, y=CDX2PA, fill=Terminal)) + 
+  geom_violin(trim=FALSE)+
+  geom_boxplot(width=0.1, fill="white")+
+  labs(title="CDX2 activity",x="", y = "Expression")  + 
+  theme_classic() + scale_fill_manual(values = c("red3", "royalblue1", "palegreen4")) + 
+  stat_compare_means(comparisons = compare,label.y = c(7, 8.5, 10))
+p4 = ggplot(GG_data, aes(x=Terminal, y=CD24, fill=Terminal)) + 
+  geom_violin(trim=FALSE)+
+  geom_boxplot(width=0.1, fill="white")+
+  labs(title="CD24 expression",x="", y = "Expression")  + 
+  theme_classic() + scale_fill_manual(values = c("red3", "royalblue1", "palegreen4")) + 
+  stat_compare_means(comparisons = compare,label.y = c(6, 7.5, 9)) 
+ggarrange(p1, p2, p3, p4, nrow = 1)
+dev.off()
+
+
+ICI_gene = read.csv('/github/singlecell_data/SG/data/Cancer/immuno_gene.csv')
+ICI_gene = ICI_gene$gene
+A1_cancer = Cancer
+A1_cancer$type = 'Control'
+A1_cancer$type[which(A1_cancer$terminal == 'Terminal1')] = 'Terminal1'
+Idents(A1_cancer) = 'type'
+myData.genes = wilcoxauc(A1_cancer, "type", groups_use = c("Terminal1","Control"))
+myData.genes = myData.genes[which(myData.genes$group == 'Terminal1'),]
+myData.genes = myData.genes[which(myData.genes$feature %in% ICI_gene),]
+ICI_data = myData.genes[,c('feature','logFC','pval','padj')]
+ICI_data[,'-log10FDR'] = -log10(ICI_data$padj)
+ICI_data[,'signif'] = 'no'
+ICI_data[,'signif'][which(ICI_data$padj <= 0.05 & abs(ICI_data$logFC) >= 0.5)] = 'yes'
+ICI_data[,'label'] = ICI_data[,'signif']
+ICI_data[which(ICI_data$feature == 'CD47'),'label'] = 'yes'
+rownames(ICI_data) = NULL
+
+
+######## Main figure 4e
+pdf("/github/Figure/Main/Fig4/e_Immune_modulator.pdf", width = 16, height = 8)
+ggplot(ICI_data, aes(x = logFC, y = `-log10FDR`, label = feature, color = signif)) +
+  geom_point(size = 5) + 
+  geom_vline(xintercept = c(-0.5, 0.5), linetype = "dashed", color = "red") +  
+  geom_hline(yintercept = -log10(0.05), linetype = "dotted", color = "blue") +  
+  geom_text(data = subset(ICI_data, label == 'yes'), 
+            hjust = 0.5, vjust = -0.5, size = 5) +  
+  scale_color_manual(values = c("gray",'red')) +  
+  scale_shape_manual(values = c(16, 17, 15, 3, 7, 8)) +  
+  labs(title = "Immune modulator molecule",x = "log(Fold Change)",y = "-log10(FDR)",color = "siginf") + 
+  theme(panel.background = element_rect(fill = "white", color = "black"),legend.title = element_blank(), 
+        legend.key = element_blank(),axis.text.x = element_text(angle =   0, size = 15, hjust = 0.5), 
+        axis.text.y = element_text(angle = -90, size = 15, hjust = 0.5))
+dev.off()
+
+
+A2_cancer = Cancer
+A2_cancer$type = 'Control'
+A2_cancer$type[which(A2_cancer$terminal == 'Terminal2')] = 'Terminal2'
+Idents(A2_cancer) = 'type'
+myData.genes = wilcoxauc(A2_cancer, "type", groups_use = c("Terminal2","Control"))
+myData.genes = myData.genes[which(myData.genes$group == 'Terminal2'),]
+myData.genes = myData.genes[which(myData.genes$feature %in% ICI_gene),]
+ICI_data = myData.genes[,c('feature','logFC','pval','padj')]
+ICI_data[,'-log10FDR'] = -log10(ICI_data$padj)
+ICI_data[,'signif'] = 'no'
+ICI_data[,'signif'][which(ICI_data$padj <= 0.05 & abs(ICI_data$logFC) >= 0.5)] = 'yes'
+ICI_data[,'label'] = ICI_data[,'signif']
+rownames(ICI_data) = NULL
+######## Supple figure 4c
+pdf("/github/Figure/Supple/Fig4/c_A2_Immune_modulator.pdf", width = 16, height = 8)
+ggplot(ICI_data, aes(x = logFC, y = `-log10FDR`, label = feature, color = signif)) +
+  geom_point(size = 5) + 
+  geom_vline(xintercept = c(-0.5, 0.5), linetype = "dashed", color = "red") +  
+  geom_hline(yintercept = -log10(0.05), linetype = "dotted", color = "blue") +  
+  geom_text(data = subset(ICI_data, label == 'yes'), 
+            hjust = 0.5, vjust = -0.5, size = 5) +  
+  scale_color_manual(values = c("gray",'red')) +  
+  scale_shape_manual(values = c(16, 17, 15, 3, 7, 8)) +  
+  labs(title = "Immune modulator molecule",x = "log(Fold Change)",y = "-log10(FDR)",color = "siginf") + 
+  theme(panel.background = element_rect(fill = "white", color = "black"),legend.title = element_blank(), 
+        legend.key = element_blank(),axis.text.x = element_text(angle =   0, size = 15, hjust = 0.5), 
+        axis.text.y = element_text(angle = -90, size = 15, hjust = 0.5))
+dev.off()
+
+
+A3_cancer = Cancer
+A3_cancer$type = 'Control'
+A3_cancer$type[which(A3_cancer$terminal == 'Terminal3')] = 'Terminal3'
+Idents(A3_cancer) = 'type'
+myData.genes = wilcoxauc(A3_cancer, "type", groups_use = c("Terminal3","Control"))
+myData.genes = myData.genes[which(myData.genes$group == 'Terminal3'),]
+myData.genes = myData.genes[which(myData.genes$feature %in% ICI_gene),]
+ICI_data = myData.genes[,c('feature','logFC','pval','padj')]
+ICI_data[,'-log10FDR'] = -log10(ICI_data$padj)
+ICI_data[,'signif'] = 'no'
+ICI_data[,'signif'][which(ICI_data$padj <= 0.05 & abs(ICI_data$logFC) >= 0.5)] = 'yes'
+ICI_data[,'label'] = ICI_data[,'signif']
+rownames(ICI_data) = NULL
+######## Supple figure 4c
+pdf("/github/Figure/Supple/Fig4/c_A3_Immune_modulator.pdf", width = 16, height = 8)
+ggplot(ICI_data, aes(x = logFC, y = `-log10FDR`, label = feature, color = signif)) +
+  geom_point(size = 5) + 
+  geom_vline(xintercept = c(-0.5, 0.5), linetype = "dashed", color = "red") +  
+  geom_hline(yintercept = -log10(0.05), linetype = "dotted", color = "blue") +  
+  geom_text(data = subset(ICI_data, label == 'yes'), 
+            hjust = 0.5, vjust = -0.5, size = 5) +  
+  scale_color_manual(values = c("gray",'red')) +  
+  scale_shape_manual(values = c(16, 17, 15, 3, 7, 8)) +  
+  labs(title = "Immune modulator molecule",x = "log(Fold Change)",y = "-log10(FDR)",color = "siginf") + 
+  theme(panel.background = element_rect(fill = "white", color = "black"),legend.title = element_blank(), 
+        legend.key = element_blank(),axis.text.x = element_text(angle =   0, size = 15, hjust = 0.5), 
+        axis.text.y = element_text(angle = -90, size = 15, hjust = 0.5))
+dev.off()
+
+
+Hallmark = readRDS('/github/model_data/Pathway/Geneset/MSIG_hallmark_geneset.rds')
+Hallmark[[51]] = as.vector(mapIds(org.Hs.eg.db, keys = geneSets.CMS[['MSI']], keytype = "ENTREZID", column="SYMBOL"))
+names(Hallmark)[51] = 'MSI'
+Hallmark[[52]] = as.vector(mapIds(org.Hs.eg.db, keys = geneSets.CMS[['MSS']], keytype = "ENTREZID", column="SYMBOL"))
+names(Hallmark)[52] = 'MSS'
+logfc.data = singleseqgset::logFC(cluster.ids=Cancer@meta.data$terminal, expr.mat=Cancer@assays$RNA$data)
+gse.res = wmw_gsea(expr.mat=Cancer@assays$RNA$data,cluster.cells=logfc.data[[1]],log.fc.cluster=logfc.data[[2]],gene.sets=Hallmark)
+res.stats = gse.res[["GSEA_statistics"]]
+res.pvals = gse.res[["GSEA_p_values"]]
+stats_data = res.stats
+stats_data = data.frame(t(apply(stats_data,1,function(x){(x-mean(x)/sd(x))})))
+stats_data$pathway = rownames(stats_data)
+stats_data = reshape2::melt(stats_data)
+pval_data = res.pvals
+pval_data$pathway = rownames(pval_data)
+pval_data = reshape2::melt(pval_data)
+total_data = cbind(stats_data,pval_data$value)
+total_data$pathway = gsub("HALLMARK_", "", total_data$pathway)
+total_data$pathway = gsub("_", " ", total_data$pathway)
+colnames(total_data) = c('Pathway','Terminal','Enrichment score','Pvalue')
+total_data[,'-log10(Pvalue)'] = -(log10(total_data$Pvalue))
+total_data = total_data[-which(total_data$Terminal == 'Unknown'),]
+pathway = c('MSS', 'HEDGEHOG SIGNALING','MYC TARGETS V2', 'MYC TARGETS V1', 'ANGIOGENESIS', 
+            'EPITHELIAL MESENCHYMAL TRANSITION', 'TNFA SIGNALING VIA NFKB', 'GLYCOLYSIS', 'MSI', 'P53 PATHWAY')
+total_data = total_data[which(total_data$Pathway %in% pathway),]
+total_data$Pathway = factor(total_data$Pathway, levels = pathway)
+
+
+######## Main figure 4d
+pdf("/github/Figure/Main/Fig4/d_Pathway.pdf", width = 8, height = 6)
+ggballoonplot(total_data, x = "Terminal", y = "Pathway", size = "-log10(Pvalue)",
+              fill = "Enrichment score",ggtheme = theme_classic()) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, na.value = 'grey',limits = c(-2.6,2.6),oob = scales::squish) +
+  scale_size(range = c(10, 15)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 15),axis.text.y = element_text(hjust = 1,size = 15),
+        axis.title.x = element_blank(),axis.title.y = element_blank()) + coord_flip()
+dev.off()

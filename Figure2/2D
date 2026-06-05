@@ -1,0 +1,116 @@
+library(ArchR)
+library(Seurat)
+library(BSgenome.Hsapiens.UCSC.hg38)
+library(hexbin)
+library(harmony)
+library(Cairo)
+library(presto)
+library(chromVARmotifs)
+library(rhandsontable)
+
+addArchRGenome("hg38")
+
+proj = ArchRProject(
+  ArrowFiles = c('/github/singlecell_data/ATAC/CRC1.arrow',
+                 '/github/singlecell_data/ATAC/CRC3.arrow',
+                 '/github/singlecell_data/ATAC/CRC4.arrow'), 
+  outputDirectory = "/github/singlecell_data/ATAC/"
+)
+proj = filterDoublets(proj)
+p1 = plotGroups(
+  ArchRProj = proj, 
+  groupBy = "Sample", 
+  colorBy = "cellColData", 
+  name = "TSSEnrichment",
+  plotAs = "violin",
+  alpha = 0.4,
+  addBoxPlot = TRUE
+)
+p2 = plotGroups(
+  ArchRProj = proj, 
+  groupBy = "Sample", 
+  colorBy = "cellColData", 
+  name = "nFrags",
+  plotAs = "violin",
+  alpha = 0.4,
+  addBoxPlot = TRUE
+)
+p1 + p2
+
+proj = addIterativeLSI(
+  ArchRProj = proj,
+  useMatrix = "TileMatrix", 
+  name = "IterativeLSI", 
+  iterations = 2, 
+  clusterParams = list(
+    resolution = c(0.2), 
+    sampleCells = 10000, #nCells(proj), 
+    n.start = 10
+  ), 
+  varFeatures = 25000, 
+  dimsToUse = 1:30
+)
+proj = addUMAP(
+  ArchRProj = proj, 
+  reducedDims = "IterativeLSI", 
+  name = "UMAP", 
+  nNeighbors = 30, 
+  minDist = 0.5, 
+  metric = "cosine", force = TRUE
+)
+proj = addClusters(
+  input = proj,
+  reducedDims = "IterativeLSI",
+  method = "Seurat",
+  name = "Clusters",
+  resolution = 0.5, sampleCells = 50000
+)
+proj = addImputeWeights(proj)
+
+markerGenes  = c(
+  "EPCAM","KRT8","KRT18","SLC39A5",'CDX2','CD24','HNF4A',#Epithelial
+  "CD3D","CD3E", #Tcell
+  "SLC18A2", #Mast
+  "CD79A",'CD38', #Bcell
+  "COL1A1",'NOTCH3', #Fibroblast
+  "CLDN5",'NOTCH4','SELP','DLL4',#Endothelial
+  "CD163",'CD14','SIGLEC10', #Myeloid
+  'SLC39A1','SLC39A2','SLC39A3','SLC39A4','SLC39A5','SLC39A6','SLC39A7','SLC39A8','SLC39A9', #SLC39
+  'SLC39A10','SLC39A11','SLC39A12','SLC39A13','SLC39A14'
+)
+proj_test = plotEmbedding(
+  ArchRProj = proj, 
+  colorBy = "GeneScoreMatrix", 
+  name = markerGenes, 
+  embedding = "UMAP",
+  imputeWeights = getImputeWeights(proj)
+)
+
+
+proj$celltype = NA
+proj$celltype[which(proj$Clusters == 'C8'| proj$Clusters == 'C9' | proj$Clusters == 'C10')] = 'Cancer'
+proj$celltype[which(proj$Clusters == 'C11' | proj$Clusters == 'C12' | proj$Clusters == 'C13')] = 'Cancer'
+proj$celltype[which(proj$Clusters == 'C14' | proj$Clusters == 'C15' | proj$Clusters == 'C16')] = 'Cancer'
+proj$celltype[which(proj$Clusters == 'C17' | proj$Clusters == 'C18')] = 'Cancer'
+proj$celltype[which(proj$Clusters == 'C1')] = 'Tcell'
+proj$celltype[which(proj$Clusters == 'C5')] = 'Myeloid'
+proj$celltype[which(proj$Clusters == 'C2' | proj$Clusters == 'C3')] = 'Bcell'
+proj$celltype[which(proj$Clusters == 'C6')] = 'Fibroblast'
+proj$celltype[which(proj$Clusters == 'C7')] = 'Endothelial'
+proj$celltype[which(proj$Clusters == 'C4')] = 'Myeloid'
+
+
+
+CD24_enh = plotBrowserTrack(
+  ArchRProj = proj, 
+  groupBy = "celltype", 
+  region = GRanges("chr6", IRanges(start = 106770001, end = 107210000)),
+  upstream = 10000,
+  downstream = 10000,
+  plotSummary = c('BulkTrack',"FeatureTrack", "GeneTrack"),
+  scCellsMax = 20000
+)
+######## Main figure 2d
+pdf("/github/Figure/Main/Fig2/d_scATAC.pdf", width = 16, height = 8)
+grid::grid.draw(CD24_enh)
+dev.off()

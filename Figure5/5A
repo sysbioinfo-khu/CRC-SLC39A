@@ -1,0 +1,30 @@
+library(NICHES)
+
+sc = qread('/github/singlecell_data/SG/data/SG_processed_data.qs')
+scc = RunNICHES(sc, assay = 'RNA', species = 'human', LR.database = 'omnipath', cell_types = 'celltype', CellToCell = T)
+demo = scc$CellToCell
+demo = ScaleData(demo, features = rownames(demo)) 
+demo = RunPCA(demo, features = rownames(demo))
+demo = RunUMAP(demo, dims = 1:6)
+#qsave(demo,'/github/singlecell_data/SG/niches/demo.qs')
+
+######## Supple figure 5a
+pdf("/github/Figure/Supple/Fig5/a_NICHESumap.pdf", width = 16, height = 8)
+DimPlot(demo,reduction = 'umap',group.by = 'VectorType',label = F)
+dev.off()
+
+C_C = FindMarkers(demo,only.pos = T,ident.1 = 'Cancer—Cancer',test.use = "roc",logfc.threshold = 4.5)
+C_B = FindMarkers(demo,only.pos = T,ident.1 = 'Cancer—Bcell',test.use = "roc",logfc.threshold = 4.5)
+C_E = FindMarkers(demo,only.pos = T,ident.1 = 'Cancer—Endothelial',test.use = "roc",logfc.threshold = 4.5)
+C_F = FindMarkers(demo,only.pos = T,ident.1 = 'Cancer—Fibroblast',test.use = "roc",logfc.threshold = 4.5)
+C_S = FindMarkers(demo,only.pos = T,ident.1 = 'Cancer—Schwann',test.use = "roc",logfc.threshold = 4.5)
+C_T = FindMarkers(demo,only.pos = T,ident.1 = 'Cancer—Tcell',test.use = "roc",logfc.threshold = 4.5)
+C_M = FindMarkers(demo,only.pos = T,ident.1 = 'Cancer—Myeloid',test.use = "roc",logfc.threshold = 4.5)
+
+marker = c(rownames(C_C)[1:5],rownames(C_T)[1:5],rownames(C_B),rownames(C_F)[1:5],rownames(C_M)[1:5],rownames(C_E)[1:5],rownames(C_S)[1:5])
+from_cancer = subset(demo,VectorType == 'Cancer—Cancer' | VectorType =='Cancer—Bcell' | VectorType == 'Cancer—Endothelial' | VectorType == 'Cancer—Fibroblast' |VectorType == 'Cancer—Myeloid' |VectorType == 'Cancer—Schwann' |VectorType == 'Cancer—Tcell')
+
+######## Main figure 5a
+pdf("/github/Figure/Main/Fig5/a_NICHES_heatmap.pdf", width = 12, height = 6)
+scCustomize::Clustered_DotPlot(from_cancer, features = unique(marker),plot_km_elbow = FALSE,cluster_ident = F, cluster_feature = F,colors_use_exp = c('skyblue', 'tomato')) 
+dev.off()

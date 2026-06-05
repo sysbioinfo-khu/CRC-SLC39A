@@ -1,0 +1,110 @@
+df = read.csv('/github/singlecell_data/SG/metacell/All_coef.csv', header = T, row.names = 1)
+df[,'celltype'] = rownames(df)
+df[,'celltype'] = factor(df$celltype, levels = c("Cancer", "Tcell", "Bcell", "Fibroblast", "Myeloid", 'Endothelial', 'Schwann'))
+celltype_colors = c("Cancer" = "steelblue", "Tcell" = "grey90", "Bcell" = "red", 
+                    "Fibroblast" = "darkorange", "Myeloid" = "chocolate4", 
+                    "Endothelial" = "darkviolet", "Schwann" = "pink1")
+
+######## Main figure 3e
+pdf("/github/Figure/Main/Fig3/e_SEACell_allcell_coeff.pdf", width = 18, height = 24)
+ggplot(df, aes(x = celltype, y = Zinc_CDX2_coef)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = Zinc_CDX2_coef), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df$Zinc_CDX2_pval  < 0.05, 1.5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient") +
+  ggplot(df, aes(x = celltype, y = Zinc_protein_CDX2_coef)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = Zinc_protein_CDX2_coef), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df$Zinc_protein_CDX2_pval < 0.05, 1.5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient") +
+  ggplot(df, aes(x = celltype, y = CDX2_CD24_coef )) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = CDX2_CD24_coef ), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df$CDX2_CD24_pval  < 0.05, 1.5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient") +
+  ggplot(df, aes(x = celltype, y = protein_CDX2_CD24_coef)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = protein_CDX2_CD24_coef), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df$protein_CDX2_CD24_pval     < 0.05, 1.5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient") +
+  ggplot(df, aes(x = celltype, y = Zinc_CD24_coef)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = Zinc_CD24_coef), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df$Zinc_CD24_pval     < 0.05, 1.5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient")
+dev.off()
+
+
+
+
+
+df1 = read.csv('/github/singlecell_data/SG/metacell/All_coef.csv', header = T, row.names = 1)
+df2 = read.csv('/github/singlecell_data/SG/metacell/SEACEll_CD47_coef.csv', header = T, row.names = 1)
+df1[,'celltype'] = rownames(df1)
+df1[,'celltype'] = factor(df1$celltype, levels = c("Cancer", "Tcell", "Bcell", "Fibroblast", "Myeloid", 'Endothelial', 'Schwann'))
+df2[,'celltype'] = rownames(df2)
+df2[,'celltype'] = factor(df2$celltype, levels = c("Cancer", "Tcell", "Bcell", "Fibroblast", "Myeloid", 'Endothelial', 'Schwann'))
+celltype_colors = c("Cancer" = "steelblue", "Tcell" = "grey90", "Bcell" = "red", 
+                    "Fibroblast" = "darkorange", "Myeloid" = "chocolate4", 
+                    "Endothelial" = "darkviolet", "Schwann" = "pink1")
+
+
+######## Supple figure 3e
+pdf("/github/Figure/Supple/Fig3/e_SEACell_CD47_coeff.pdf", width = 14, height = 20)
+ggplot(df1, aes(x = celltype, y = CDX2_CD24_coef)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = CDX2_CD24_coef), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df1$CDX2_CD24_pval     < 0.05, 5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient") + 
+  ggplot(df1, aes(x = celltype, y = protein_CDX2_CD24_coef )) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = protein_CDX2_CD24_coef ), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df1$protein_CDX2_CD24_pval  < 0.05, 5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient") +
+  ggplot(df2, aes(x = celltype, y = CDX2_CD47_coef)) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = CDX2_CD47_coef), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df2$CDX2_CD47_pval     < 0.05, 5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient") +
+  ggplot(df2, aes(x = celltype, y = protein_CDX2_CD47_coef )) +
+  geom_segment(aes(x = celltype, xend = celltype, y = 0, yend = protein_CDX2_CD47_coef ), colour = "black", lwd = 0.5) +
+  geom_point(aes(fill = celltype), size = 15, shape = 21,stroke = ifelse(df2$protein_CDX2_CD47_pval  < 0.05, 5, 0)) + 
+  scale_fill_manual(values = celltype_colors) +
+  coord_cartesian(ylim = c(-0.61, 0.61)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 15),
+        axis.text.y = element_text(size = 15)) +
+  ylab("Coefficient")
+dev.off()
